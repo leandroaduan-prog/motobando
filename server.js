@@ -26,6 +26,30 @@ app.get('/api/roteiro/:code', (req, res) => {
   const { name, date, startTime, stops, route, mode } = room.trip;
   res.json({ code: room.code, name, date, startTime, mode, stops, route: route ? { dist_km: route.dist_km, dur_min: route.dur_min } : null, members: Object.keys(room.members).length });
 });
+// Busca de lugares (postos, pousadas, comida…) feita pelo servidor: tenta vários servidores do OpenStreetMap e guarda em cache
+const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const opCache = new Map();
+app.post('/api/overpass', async (req, res) => {
+  const q = String((req.body && req.body.q) || '');
+  if (!q || q.length > 20000 || !/^\[out:json\]/.test(q)) return res.status(400).json({ error: 'consulta inválida' });
+  const hit = opCache.get(q);
+  if (hit && Date.now() - hit.t < 30 * 60 * 1000) return res.json(hit.data);
+  let lastErr = 'sem resposta';
+  for (const url of OVERPASS_MIRRORS) {
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000);
+    try {
+      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'MotoBando/0.1 (app de viagem de moto)' }, signal: ctl.signal });
+      if (!r.ok) { lastErr = url + ' HTTP ' + r.status; continue; }
+      const data = await r.json();
+      opCache.set(q, { t: Date.now(), data });
+      if (opCache.size > 500) opCache.delete(opCache.keys().next().value);
+      return res.json(data);
+    } catch (e) { lastErr = url + ' ' + e.message; } finally { clearTimeout(tm); }
+  }
+  console.warn('Overpass falhou:', lastErr);
+  res.status(502).json({ error: 'Os servidores de mapa estão ocupados. Tente de novo em alguns segundos.' });
+});
+
 // Qualquer /r/CODIGO abre o app (ele lê o código da URL)
 app.get(['/r/:code', '/r/:code/*'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

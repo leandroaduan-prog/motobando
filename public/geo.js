@@ -85,14 +85,18 @@ const GEO = (() => {
       return j.name || a.village || a.town || a.city || a.suburb || a.road || 'Ponto no mapa';
     } catch (e) { return 'Ponto no mapa'; }
   }
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
   async function overpass(q) {
-    let err;
-    for (const u of OVERPASS) {
-      try { return await getJSON(u, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, 30000); }
-      catch (e) { err = e; }
+    // 1º: pelo nosso servidor (mais confiável no celular); se ele falhar, tenta direto
+    try { return await getJSON('/api/overpass', { method: 'POST', body: JSON.stringify({ q }), headers: { 'Content-Type': 'application/json' } }, 60000); }
+    catch (e) {
+      let err = e;
+      for (const u of OVERPASS) {
+        try { return await getJSON(u, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, 25000); }
+        catch (e2) { err = e2; }
+      }
+      throw new Error('servidores de mapa ocupados');
     }
-    throw err;
   }
   const FILTERS = {
     posto: ['["amenity"="fuel"]'],
@@ -116,7 +120,7 @@ const GEO = (() => {
   }
   async function near(cat, lat, lng, radius = 8000) {
     const parts = FILTERS[cat].map(f => `nwr(around:${radius},${lat.toFixed(5)},${lng.toFixed(5)})${f};`).join('');
-    const j = await overpass(`[out:json][timeout:25];(${parts});out center tags 80;`);
+    const j = await overpass(`[out:json][timeout:20];(${parts});out center tags 60;`);
     const seen = new Set();
     return j.elements.map(e => {
       const p = e.type === 'node' ? { lat: e.lat, lng: e.lon } : e.center ? { lat: e.center.lat, lng: e.center.lon } : null;

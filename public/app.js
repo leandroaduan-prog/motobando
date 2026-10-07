@@ -399,13 +399,13 @@ async function renderNear(reload) {
   el.querySelectorAll('[data-c]').forEach(x => x.onclick = () => { UI.nearCat = x.dataset.c; renderNear(); });
   if (!ref) return;
   try {
-    if (!UI.nearRes || UI.nearRes.key !== key || reload) UI.nearRes = { key, list: await GEO.near(UI.nearCat, ref.lat, ref.lng, UI.nearCat === 'trilha' ? 6000 : 10000) };
+    if (!UI.nearRes || UI.nearRes.key !== key || reload) UI.nearRes = { key, list: await GEO.near(UI.nearCat, ref.lat, ref.lng, UI.nearCat === 'trilha' ? 5000 : UI.nearCat === 'comida' ? 5000 : 10000) };
     if (!UI.near || UI.nearRes.key !== key) return;
     const list = UI.nearRes.list.map(p => ({ ...p, d: GEO.hav(ref, p) })).sort((a, b) => (b.named - a.named) || a.d - b.d).slice(0, 40).sort((a, b) => a.d - b.d);
     L_poi.clearLayers(); list.forEach(p => L.marker([p.lat, p.lng], { icon: poiIcon(p.cat) }).on('click', () => { UI.poi = p; renderPoiCard(); }).addTo(L_poi));
     $('#nearBody').innerHTML = `<p class="note">${esc(ref.label)} · ${list.length} lugares · dados do OpenStreetMap</p>` + (list.map((p, i) => `<button type="button" class="place" data-i="${i}" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line)"><div class="poi-ico" style="background:${CAT[p.cat].color}">${ic(CAT[p.cat].icon)}</div><div class="grow"><h4>${esc(p.name)}</h4><p>${esc([p.kind, p.sub, p.extra].filter(Boolean).join(' · ') || CAT[p.cat].n)}</p></div><div class="dist num">${f1(p.d)} km</div></button>`).join('') || '<p class="empty">Nada encontrado nessa categoria por aqui.</p>');
     $('#nearBody').querySelectorAll('[data-i]').forEach(x => x.onclick = () => { const p = list[+x.dataset.i]; UI.near = false; renderNear(); UI.poi = p; renderPoiCard(); UI.userMovedMap = Date.now(); programmatic(() => map.setView([p.lat, p.lng], 15)); });
-  } catch (e) { if ($('#nearBody')) $('#nearBody').innerHTML = `<p class="empty">Não consegui buscar agora (${esc(e.message)}). Sem sinal? Tente de novo daqui a pouco.</p><div style="text-align:center"><button class="btn" type="button" id="nearRetry">${ic('refresh')}Tentar de novo</button></div>`; const r = $('#nearRetry'); if (r) r.onclick = () => renderNear(true); }
+  } catch (e) { if ($('#nearBody')) $('#nearBody').innerHTML = `<p class="empty">Não consegui buscar agora: ${esc(e.message)}. Tente de novo em alguns segundos.</p><div style="text-align:center"><button class="btn" type="button" id="nearRetry">${ic('refresh')}Tentar de novo</button></div>`; const r = $('#nearRetry'); if (r) r.onclick = () => renderNear(true); }
 }
 
 /* ================= ALERTA DE TELA CHEIA (alguém ficou para trás) ================= */
