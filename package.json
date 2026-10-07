@@ -1,0 +1,19 @@
+{
+  "name": "motobando",
+  "version": "0.1.0",
+  "description": "MotoBando: viagem de moto em grupo ou solo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.22.3",
+    "leaflet": "^1.9.4",
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}

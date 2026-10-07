@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0D6B42">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="MotoBando">
+<meta name="description" content="Viagem de moto em grupo ou solo: rota, GPS do bando, combustível, divisão de gastos e SOS.">
+<title>MotoBando</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/vendor/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top" id="top">
+    <div class="logo"><span class="plate">MOTOBANDO</span></div>
+    <div class="trip-name"><b id="tripTitle">MotoBando</b><span id="tripSub"></span></div>
+    <span class="net" id="net" title="Conexão"></span>
+    <button class="btn-plus" id="openPremium" type="button">Bando+</button>
+  </header>
+  <main id="main">
+    <section class="view" id="v-home"></section>
+    <section class="view map-view" id="v-mapa" hidden>
+      <div class="map" id="map"></div>
+      <div class="map-top">
+        <div id="linear" hidden></div>
+        <div id="banners" class="banners"></div>
+      </div>
+      <div class="map-ctrl">
+        <button class="iconbtn" id="zin" type="button" aria-label="Aproximar"></button>
+        <button class="iconbtn" id="zout" type="button" aria-label="Afastar"></button>
+        <button class="iconbtn" id="zfit" type="button" aria-label="Ver rota inteira"></button>
+        <button class="iconbtn" id="zme" type="button" aria-label="Centralizar em mim"></button>
+      </div>
+      <div class="map-bottom">
+        <div class="map-actions" id="mapActions"></div>
+        <div id="poiCard" hidden></div>
+        <div class="infobar" id="infobar"></div>
+      </div>
+      <div class="sheet" id="near" hidden></div>
+    </section>
+    <section class="view" id="v-viagem" hidden></section>
+    <section class="view" id="v-sos" hidden></section>
+    <section class="view" id="v-moto" hidden></section>
+    <section class="view" id="v-contas" hidden></section>
+  </main>
+  <nav class="tabs" id="tabs" role="tablist" hidden></nav>
+  <div id="roadRoot"></div>
+  <div id="modalRoot"></div>
+  <div id="bigRoot"></div>
+  <div id="toastRoot"></div>
+</div>
+<script src="/vendor/leaflet.js"></script>
+<script src="/data.js"></script>
+<script src="/geo.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
