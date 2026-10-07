@@ -7,6 +7,7 @@ const f0 = n => Math.round(+n).toLocaleString('pt-BR');
 const brl = n => (+n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const uid = () => Math.random().toString(36).slice(2, 10);
 const hhmm = d => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '--:--';
+const helloMsg = () => ({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: (MOTOS[ME.moto.model] || {}).n, color: ME.color, sangue: ME.sangue || '' }, code: CODE, sosCfg: ME.sosCfg });
 const ini = n => String(n || '?').trim().slice(0, 2).toUpperCase();
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
@@ -51,7 +52,7 @@ function connect() {
   try { ws = new WebSocket(url); } catch (e) { return scheduleReconnect(); }
   ws.onopen = () => {
     wsRetry = 0; UI.wsOk = true; setNet();
-    sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: (MOTOS[ME.moto.model] || {}).n, color: ME.color }, code: CODE, sosCfg: ME.sosCfg });
+    sendNow(helloMsg());
     if (myPos) sendNow({ t: 'pos', ...myPos });
     const q = wsQueue; wsQueue = []; q.forEach(sendNow);
   };
@@ -509,7 +510,8 @@ function showHome() {
      <div class="field"><label for="pName">Seu nome ou apelido</label><input class="input" id="pName" maxlength="30" required autocomplete="nickname" placeholder="Ex.: Leandro"></div>
      <div class="eyebrow" style="margin-top:4px">Sua moto <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">(se for de garupa, pode pular)</span></div>
      ${motoPickerHTML('p', ME.moto.model)}
-     <button class="btn primary btn-wide" type="submit">Continuar</button></form>` : `
+     <button class="btn primary btn-wide" type="submit">Continuar</button>
+     <button class="btn ghost btn-wide" type="button" id="haveCode">Já usei o MotoBando: tenho meu código</button></form>` : `
    ${installHTML()}
    ${urlCode ? '' : activeTripHTML() + tripListHTML()}
    ${urlCode ? `<div class="banner amber" style="box-shadow:none">${ic('users')}<div>Você recebeu o convite <b>${esc(urlCode)}</b>. Escolha como vai: pilotando ou de garupa.</div></div>` : ''}
@@ -526,9 +528,11 @@ function showHome() {
     <p class="note">Rotas clássicas de moto já montadas, uma por mês. Servem para ver como fica a pasta e para usar como modelo.</p>
     <div style="display:flex;flex-direction:column;gap:10px"><button class="btn btn-wide" type="button" id="ex15">${ic('users')}Guia: 15 viagens em grupo no ano</button><button class="btn btn-wide" type="button" id="ex10">${ic('helmet')}Solo: 10 viagens no ano</button></div></details>
    <button class="btn btn-wide" type="button" id="homeBorders">${ic('book')}Guia de fronteiras</button>
+   ${needProfile ? '' : personalCodeHTML()}
    <p class="legal">Mapa © colaboradores do OpenStreetMap. Rotas: OSRM. Previsão do tempo: Open-Meteo.</p>`}
   </div>`;
-  const pf = $('#profForm'); if (pf) pf.onsubmit = e => { e.preventDefault(); ME.name = $('#pName').value.trim(); ME.moto.model = $('#pModelo').value; saveMe(); if (UI.wsOk) sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: MOTOS[ME.moto.model].n, color: ME.color }, sosCfg: ME.sosCfg }); showHome(); };
+  const hc = $('#haveCode'); if (hc) hc.onclick = () => { ME.name = ME.name || 'Motociclista'; saveMe(); showHome(); setTimeout(() => { const d = $('#restoreForm'); if (d) { d.closest('details').open = true; d.scrollIntoView({ block: 'center' }); $('#rCode').focus(); } }, 50); };
+  const pf = $('#profForm'); if (pf) pf.onsubmit = e => { e.preventDefault(); ME.name = $('#pName').value.trim(); ME.moto.model = $('#pModelo').value; saveMe(); if (UI.wsOk) sendNow(helloMsg()); renderAvatar(); showHome(); };
   bindMotoPicker('p');
   let joinRole = 'integrante';
   document.querySelectorAll('[data-jr]').forEach(b => b.onclick = () => { joinRole = b.dataset.jr; document.querySelectorAll('[data-jr]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
@@ -536,6 +540,7 @@ function showHome() {
   const ng = $('#newGroup'); if (ng) ng.onclick = () => createTrip('grupo');
   bindTripList();
   const ib = $('#installBtn'); if (ib) ib.onclick = doInstall;
+  bindPersonalCode();
   const na = $('#newAuto'); if (na) na.onclick = showPlanner;
   const gb = $('#homeBorders'); if (gb) gb.onclick = showBorders;
   const e15 = $('#ex15'); if (e15) e15.onclick = () => loadExamples('grupo', 15, 24);
@@ -547,7 +552,6 @@ const tripPhase = t => t.status === 'encerrada' ? 'feita' : (t.status === 'andam
 function activeTripHTML() { return ''; }
 function tripListHTML() {
   const list = Object.values(TRIPS).sort((a, b) => String(a.date || '9').localeCompare(String(b.date || '9')));
-  if (!list.length) return '';
   const act = list.filter(t => tripPhase(t) === 'andamento' && !t.gone), next = list.filter(t => tripPhase(t) === 'proxima'), past = list.filter(t => tripPhase(t) === 'feita').reverse();
   const card = (t, kind) => { const d = t.date ? new Date(t.date + 'T12:00:00') : null; const role = t.mode === 'solo' ? 'Solo' : t.guide ? 'Guia' : t.role === 'garupa' ? 'Garupa' : 'Integrante';
     return `<div class="trip-card ${t.gone ? 'gone' : ''} ${kind}"><button type="button" class="trip-open" data-open="${esc(t.code)}"><span class="trip-date">${d ? `<b>${d.getDate()}</b>${d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}` : '<b>?</b>data'}</span><span class="trip-info"><b>${esc(t.name)}</b><span>${esc(role)} · ${t.stops} parada${t.stops === 1 ? '' : 's'}${t.dist ? ' · ' + f0(t.dist) + ' km' : ''}${t.mode !== 'solo' && t.members > 1 ? ' · ' + t.members + ' pessoas' : ''}${t.gone ? ' · não existe mais' : ''}</span></span></button>
@@ -558,12 +562,13 @@ function tripListHTML() {
    <section class="folder ${open ? 'open' : ''}">
     <button type="button" class="folder-head" id="folderToggle" aria-expanded="${open}"><span><b>Minhas viagens</b><small>${next.length} próxima${next.length === 1 ? '' : 's'} · ${past.length} realizada${past.length === 1 ? '' : 's'}</small></span><span class="chev">${ic('chev')}</span></button>
     <div class="folder-body" ${open ? '' : 'hidden'}>
-     <div class="eyebrow">Próximas (${next.length})</div>${next.length ? `<div class="trip-list">${next.map(t => card(t, 'proxima')).join('')}</div>` : '<p class="note" style="margin:0">Nenhuma viagem marcada. Crie uma abaixo.</p>'}
+     ${!list.length ? `<p class="note" style="margin:0">Sua pasta está vazia. Crie uma viagem logo abaixo, entre num grupo com o código ou carregue as viagens de exemplo.</p><button class="btn btn-wide" type="button" id="folderEx">${ic('list')}Ver viagens de exemplo</button>` : `<div class="eyebrow">Próximas (${next.length})</div>${next.length ? `<div class="trip-list">${next.map(t => card(t, 'proxima')).join('')}</div>` : '<p class="note" style="margin:0">Nenhuma viagem marcada. Crie uma abaixo.</p>'}`}
      ${past.length ? `<details><summary class="eyebrow" style="cursor:pointer;min-height:40px;display:flex;align-items:center">Realizadas (${past.length}) · toque para ver e repetir</summary><div class="trip-list" style="margin-top:8px">${past.map(t => card(t, 'feita')).join('')}</div></details>` : ''}
     </div></section>`;
 }
 function bindTripList() {
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openTrip(b.dataset.open));
+  const fx = $('#folderEx'); if (fx) fx.onclick = () => { const d = [...document.querySelectorAll('#v-home details')].find(x => x.querySelector('#ex15')); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'center' }); } };
   const ft = $('#folderToggle'); if (ft) ft.onclick = () => { const o = !store.get('mb-folderOpen', false); store.set('mb-folderOpen', o); ft.parentElement.classList.toggle('open', o); ft.setAttribute('aria-expanded', o); ft.nextElementSibling.hidden = !o; };
   document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
     const t = TRIPS[b.dataset.rm]; if (!t) return;
@@ -596,7 +601,27 @@ async function loadExamples(mode, n, every) {
   showHome();
 }
 function goHome() { CODE = null; store.set('mb-code', null); ROOM = null; UI.road = false; renderRoad(); showHome(); }
-function memberPayload(role) { return { id: ME.id, name: ME.name, color: ME.color, role: role || (meM() || {}).role || 'integrante', garupaOf: (meM() || {}).garupaOf || '', moto: ME.moto, checks: (meM() || {}).checks || {} }; }
+// código pessoal: é o próprio identificador do aparelho, em grupos de 4 para ficar fácil de anotar
+const myCode = () => ME.id.toUpperCase().replace(/[^A-Z0-9]/g, '').match(/.{1,4}/g).join('-');
+function personalCodeHTML() {
+  return `<details class="card"><summary style="font-weight:700;cursor:pointer;min-height:40px;display:flex;align-items:center">Meu código MotoBando · trocar de celular</summary>
+   <p class="note">Com este código você recupera suas viagens em outro celular, ou depois de instalar o app de novo. Guarde num lugar seguro e não passe para ninguém.</p>
+   <div class="code-box"><code style="font-size:18px;letter-spacing:.06em">${esc(myCode())}</code><button class="btn small" type="button" id="copyMy">${ic('copy')}Copiar</button></div>
+   <a class="btn wa btn-wide" style="margin-top:10px" href="https://wa.me/?text=${encodeURIComponent('Meu código MotoBando (não compartilhar): ' + myCode())}" target="_blank" rel="noopener">${ic('wa')}Mandar para mim no WhatsApp</a>
+   <form id="restoreForm" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"><div class="field"><label for="rCode">Já usei o MotoBando em outro celular</label><input class="input" id="rCode" placeholder="Cole aqui o seu código" autocapitalize="characters"></div><button class="btn btn-wide" type="submit">${ic('refresh')}Trazer minhas viagens</button></form></details>`;
+}
+function bindPersonalCode() {
+  const c = $('#copyMy'); if (c) c.onclick = () => copyText(myCode(), 'Código copiado');
+  const f = $('#restoreForm'); if (f) f.onsubmit = async e => {
+    e.preventDefault(); const id = $('#rCode').value.replace(/[^a-z0-9]/gi, '').toLowerCase(); if (id.length < 10) return toast('Código incompleto. Confira e tente de novo.');
+    let who; try { who = await fetch('/api/quem-sou?user=' + id).then(r => r.json()); } catch (x) { return toast('Sem conexão. Tente de novo.'); }
+    if (!who.trips) return toast('Não achei viagens com esse código. Confira se digitou certo.');
+    ME.id = id; if (who.name) ME.name = who.name; saveMe(); TRIPS = {}; store.set('mb-trips', TRIPS); CODE = null; store.set('mb-code', null);
+    toast(`Bem-vindo de volta, ${esc(who.name || 'motociclista')}! Trazendo ${who.trips} viage${who.trips === 1 ? 'm' : 'ns'}…`, 5000);
+    try { ws && ws.close(); } catch (x) {} await syncTripsFromServer(); showHome();
+  };
+}
+function memberPayload(role) { return { id: ME.id, name: ME.name, color: ME.color, sangue: ME.sangue || '', role: role || (meM() || {}).role || 'integrante', garupaOf: (meM() || {}).garupaOf || '', moto: ME.moto, checks: (meM() || {}).checks || {} }; }
 function createTrip(mode) {
   const d = new Date(); d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7)); // próximo sábado
   const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -604,7 +629,7 @@ function createTrip(mode) {
   UI.afterCreate = true;
   toast('Criando a viagem…');
 }
-function syncMember() { if (ROOM && meM()) send({ t: 'member', patch: { moto: ME.moto, name: ME.name, color: ME.color } }); }
+function syncMember() { if (ROOM && meM()) send({ t: 'member', patch: { moto: ME.moto, name: ME.name, color: ME.color, sangue: ME.sangue || '' } }); }
 
 /* ================= NAVEGAÇÃO ENTRE ABAS ================= */
 const TABS = [['mapa', 'Mapa', 'map'], ['viagem', 'Viagem', 'route'], ['sos', 'SOS', ''], ['moto', 'Moto', 'moto'], ['contas', 'Contas', 'wallet']];
@@ -748,7 +773,7 @@ function renderViagem() {
       const pilot = m.role === 'garupa' && m.garupaOf ? ROOM.members[m.garupaOf] : null;
       const sub = m.role === 'garupa' ? (pilot ? `Na garupa de ${pilot.name} · divide os gastos` : 'Garupa: escolha de quem') : ((MOTOS[(m.moto || {}).model] || {}).n || 'Moto') + (garupaOf(m.id) ? ' · com garupa' : '');
       const d = doneOf(m);
-      return `<div class="member"><div class="avatar" style="background:${m.color}">${esc(ini(m.name))}</div><div class="grow"><b>${esc(m.name)}${m.id === ME.id ? ' (você)' : ''}</b> ${role ? `<span class="pill ${role === 'Garupa' ? '' : 'green'}">${role}</span>` : ''} <span class="pill ${m.online ? 'green' : ''}" style="padding:1px 6px">${m.online ? 'online' : 'offline'}</span><div class="sub">${esc(sub)}</div></div><div style="text-align:right"><div class="small num ${d >= tot ? 'pos' : 'muted'}">${d >= tot ? 'Pronto' : d + '/' + tot}</div><div class="prog"><i style="width:${tot ? d / tot * 100 : 0}%"></i></div></div></div>`;
+      return `<div class="member">${m.id === ME.id && ME.photo ? `<img class="avatar" src="${ME.photo}" alt="">` : `<div class="avatar" style="background:${m.color}">${esc(ini(m.name))}</div>`}<div class="grow"><b>${esc(m.name)}${m.id === ME.id ? ' (você)' : ''}</b> ${role ? `<span class="pill ${role === 'Garupa' ? '' : 'green'}">${role}</span>` : ''} <span class="pill ${m.online ? 'green' : ''}" style="padding:1px 6px">${m.online ? 'online' : 'offline'}</span>${m.sangue ? ` <span class="pill blood" title="Tipo sanguíneo">${ic('drop')}${esc(m.sangue)}</span>` : ''}<div class="sub">${esc(sub)}</div></div><div style="text-align:right"><div class="small num ${d >= tot ? 'pos' : 'muted'}">${d >= tot ? 'Pronto' : d + '/' + tot}</div><div class="prog"><i style="width:${tot ? d / tot * 100 : 0}%"></i></div></div></div>`;
     }).join('')}
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
      <div class="field"><label for="myRole">Como eu vou</label><select class="input" id="myRole">${mm.role === 'guia' ? '<option value="guia" selected>Pilotando (guia)</option>' : `<option value="integrante" ${mm.role === 'integrante' ? 'selected' : ''}>Pilotando</option>`}${mm.role !== 'guia' ? rs.filter(r => r.id !== ME.id).map(r => `<option value="g:${r.id}" ${mm.role === 'garupa' && mm.garupaOf === r.id ? 'selected' : ''}>De garupa com ${esc(r.name)}</option>`).join('') : ''}</select></div>
@@ -870,11 +895,14 @@ function renderMoto() {
    ${motoPickerHTML('m', mo.model)}
    ${mo.model === 'outra' ? `<div class="row"><div class="field"><label for="oTank">Tanque (L)</label><input class="input num" id="oTank" type="number" inputmode="decimal" step="0.1" value="${mo.tanque}"></div><div class="field"><label for="oKml">Consumo (km/L)</label><input class="input num" id="oKml" type="number" inputmode="decimal" step="0.5" value="${mo.kmlBase}"></div></div>` : `
    <div class="spec-grid">
-    <div class="spec"><small>Cilindrada</small><b class="num">${f1(m.cc)}<em>cc</em></b></div>
+    ${m.el ? `<div class="spec"><small>Motor</small><b>Elétrico</b></div>
+    <div class="spec"><small>Potência</small><b class="num">${f1(m.cv)}<em>cv</em></b></div>
+    <div class="spec"><small>Bateria</small><b class="num">${f1(m.el.bat)}<em>kWh</em></b></div>
+    <div class="spec"><small>Autonomia</small><b class="num">${m.el.max > m.el.auton ? m.el.auton + '–' + m.el.max : m.el.auton}<em>km</em></b></div>` : `<div class="spec"><small>Cilindrada</small><b class="num">${f1(m.cc)}<em>cc</em></b></div>
     <div class="spec"><small>Potência</small><b class="num">${f1(m.cv)}<em>cv</em></b></div>
     <div class="spec"><small>Tanque</small><b class="num">${f1(m.tanque)}<em>L</em></b></div>
-    <div class="spec"><small>Consumo médio</small><b class="num">${f1(m.kml)}<em>km/L</em></b></div>
-   </div><p class="note" style="margin:0">Dados de fábrica aproximados. Se souber o seu consumo real, informe abaixo.</p>`}
+    <div class="spec"><small>Consumo médio</small><b class="num">${f1(m.kml)}<em>km/L</em></b></div>`}
+   </div><p class="note" style="margin:0">${m.el ? 'Moto elétrica: o app usa a menor autonomia como alcance de uma carga para planejar as paradas. Os postos mostrados são de combustível; confira antes onde recarregar.' : 'Dados de fábrica aproximados. Se souber o seu consumo real, informe abaixo.'}</p>`}
   </section>
   ${amGarupa ? '' : `
   <section class="card" style="display:flex;flex-direction:column;gap:12px">
@@ -1005,7 +1033,7 @@ function showIncomingSOS(s) {
   $('#modalRoot').innerHTML = `<div class="overlay center"><div class="incoming" id="sosIncoming" role="alertdialog" aria-label="Alerta de SOS">
    <div class="eyebrow" style="color:var(--sos)">SOS${d != null ? ' a ' + f1(d) + ' km de você' : ''}</div>
    <h2 style="margin:0;font-family:var(--f-display);font-size:30px;line-height:1.05">${esc(t.n)}</h2>
-   <div class="member" style="border:0;padding:0"><div class="avatar" style="background:${s.from.color || '#475569'}">${esc(ini(s.from.name))}</div><div class="grow"><b>${esc(s.from.name)}</b> <span class="pill ${inGroup ? 'green' : ''}">${inGroup ? 'Seu grupo' : 'Comunidade'}</span><div class="sub">${esc(s.from.moto || '')}</div></div></div>
+   <div class="member" style="border:0;padding:0"><div class="avatar" style="background:${s.from.color || '#475569'}">${esc(ini(s.from.name))}</div><div class="grow"><b>${esc(s.from.name)}</b> <span class="pill ${inGroup ? 'green' : ''}">${inGroup ? 'Seu grupo' : 'Comunidade'}</span><div class="sub">${esc(s.from.moto || '')}</div></div>${s.from.sangue ? `<span class="pill blood big" title="Tipo sanguíneo">${ic('drop')}${esc(s.from.sangue)}</span>` : ''}</div>
    <div class="row"><button class="btn primary" type="button" id="goHelp" style="flex:1">Estou indo</button><button class="btn" type="button" id="noHelp" style="flex:1">Agora não posso</button></div>
    ${s.lat || s.lng ? `<a class="btn btn-wide" href="${gmapsLink(s)}" target="_blank" rel="noopener">${ic('route')}Rota até ele no Google Maps</a>` : ''}
   </div></div>`;
@@ -1026,7 +1054,7 @@ function openPremium(msg) {
   $('#pX').onclick = () => $('#modalRoot').innerHTML = '';
   $('#ov').onclick = e => { if (e.target.id === 'ov') $('#modalRoot').innerHTML = ''; };
   $('#pTry').onclick = () => { $('#modalRoot').innerHTML = ''; toast('Anotado! Avisamos quando a assinatura abrir.'); };
-  $('#codeForm').onsubmit = async e => { e.preventDefault(); ME.premiumCode = $('#pCode').value.trim().toUpperCase(); saveMe(); const st = await planStatus(); $('#modalRoot').innerHTML = ''; toast(st && st.premium ? 'Bando+ liberado neste aparelho' : 'Código não reconhecido'); };
+  $('#codeForm').onsubmit = async e => { e.preventDefault(); ME.premiumCode = $('#pCode').value.trim().toUpperCase(); saveMe(); const st = await planStatus(); $('#modalRoot').innerHTML = ''; UI.premium = !!(st && st.premium); renderAvatar(); toast(st && st.premium ? 'Bando+ liberado neste aparelho' : 'Código não reconhecido'); };
 }
 
 
@@ -1066,7 +1094,7 @@ async function showPlanner() {
      <p class="note" style="margin:0">Até 300 km o dia é tranquilo. Acima de 500 km é puxada forte, com pouco tempo para passeio.</p></div>
     <div class="toggle-row"><div><b>Pontos turísticos no caminho</b><div class="note">Mirantes, cachoeiras e atrações perto da rota</div></div><input type="checkbox" class="switch" id="pfTur" ${pf.turismo ? 'checked' : ''}></div>
     <div class="toggle-row"><div><b>Estradas de terra e trilhas</b><div class="note">Sugestões fora de estrada perto dos pernoites</div></div><input type="checkbox" class="switch" id="pfOff" ${pf.offroad ? 'checked' : ''}></div>
-    <div class="row"><div class="field"><label>Sua moto</label><div class="small" style="font-weight:600">${esc(spec.n)} · ${f1(spec.tanque)} L · ~${f1(+ME.moto.real || spec.kml)} km/L</div><div class="note">Troque na aba Moto de qualquer viagem.</div></div><div class="field" style="flex:0 1 120px"><label for="pfPreco">Litro (R$)</label><input class="input num" id="pfPreco" type="number" inputmode="decimal" step="0.01" value="${pf.preco}"></div></div>
+    <div class="row"><div class="field"><label>Sua moto</label><div class="small" style="font-weight:600">${esc(spec.n)} · ${spec.el ? 'elétrica, ~' + spec.el.auton + ' km por carga' : f1(spec.tanque) + ' L · ~' + f1(+ME.moto.real || spec.kml) + ' km/L'}</div><div class="note">Troque na aba Moto de qualquer viagem.</div></div><div class="field" style="flex:0 1 120px"><label for="pfPreco">Litro (R$)</label><input class="input num" id="pfPreco" type="number" inputmode="decimal" step="0.01" value="${pf.preco}"></div></div>
     <button class="btn primary btn-wide" type="button" id="pfGo">${ic('route')}Montar minha viagem</button>
    </section>
    <button class="btn btn-wide" type="button" id="pfBorders">${ic('book')}Guia de fronteiras</button>
@@ -1312,10 +1340,11 @@ async function doInstall() {
 /* ================= PUXAR PARA BAIXO PARA ATUALIZAR ================= */
 async function softRefresh() {
   toast('Atualizando…', 2500);
+  syncTripsFromServer();
   try { if (gpsWatch !== null && navigator.geolocation) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; } } catch (e) {}
   if (SIM.on) { /* simulação continua */ } else if (ROOM) startGPS();
   if (!UI.wsOk || !ws || ws.readyState !== 1) { wsRetry = 0; try { ws && ws.close(); } catch (e) {} connect(); }
-  else sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: (MOTOS[ME.moto.model] || {}).n, color: ME.color }, code: CODE, sosCfg: ME.sosCfg });
+  else sendNow(helloMsg());
   if (ROOM && CODE) send({ t: 'join', code: CODE, member: memberPayload(), snap: TRIPS[CODE] && TRIPS[CODE].snap });
   if (myPos) setTimeout(sendPos, 800);
   if (map) setTimeout(() => { if (!ROOM) return; map.invalidateSize(); drawRoute(); drawMembers(); updateMapOverlays(); }, 600);
@@ -1376,13 +1405,113 @@ async function softRefresh() {
   }
 })();
 
+/* viagens guardadas no servidor entram na pasta (instalou de novo, trocou do navegador para o app, etc.) */
+async function syncTripsFromServer() {
+  try {
+    const list = await fetch('/api/minhas-viagens?user=' + encodeURIComponent(ME.id)).then(r => r.json());
+    if (!Array.isArray(list)) return;
+    let changed = false;
+    for (const t of list) {
+      const old = TRIPS[t.code] || {};
+      TRIPS[t.code] = { ...old, ...t, gone: false, snap: old.snap || null, copy: old.copy || null, updatedAt: Date.now() };
+      changed = true;
+    }
+    if (changed) { store.set('mb-trips', TRIPS); if (!$('#v-home').hidden && !(document.activeElement && /INPUT|SELECT/.test(document.activeElement.tagName))) showHome(); }
+  } catch (e) {}
+}
+
+
+/* ================= PERFIL: avatar no topo + menu ================= */
+const SANGUE = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const avatarHTML = (cls = '') => ME.photo ? `<img class="av ${cls}" src="${ME.photo}" alt="">` : `<span class="av ${cls}" style="background:${ME.color}">${esc(ini(ME.name || '?'))}</span>`;
+function renderAvatar() { const b = $('#avatarBtn'); if (b) b.innerHTML = avatarHTML() + (UI.premium ? `<span class="av-crown">${ic('crown')}</span>` : ''); }
+function closeModal() { $('#modalRoot').innerHTML = ''; }
+function openUserMenu() {
+  const mo = (MOTOS[ME.moto.model] || {}).n;
+  const item = (id, icon, t, sub) => `<button class="menu-item" type="button" id="${id}">${ic(icon)}<span><b>${t}</b>${sub ? `<small>${sub}</small>` : ''}</span><span class="chev-r">${ic('chev')}</span></button>`;
+  $('#modalRoot').innerHTML = `<div class="overlay" id="ov"><div class="modal menu-sheet" role="dialog" aria-label="Menu">
+   <div class="menu-head">${avatarHTML('xl')}<div class="grow"><b>${esc(ME.name || 'Visitante')}</b><span>${esc([mo, ME.sangue && 'Sangue ' + ME.sangue].filter(Boolean).join(' · ') || 'Complete seu cadastro')}</span><span class="pill ${UI.premium ? 'amber' : ''}" style="align-self:flex-start;margin-top:4px">${UI.premium ? ic('crown') + 'Bando+' : 'Plano grátis'}</span></div><button class="iconbtn" type="button" id="mX" aria-label="Fechar">${ic('x')}</button></div>
+   <nav class="menu-list">
+    ${item('mHome', 'home', 'Início')}
+    ${item('mTrips', 'list', 'Minhas viagens', 'Em andamento, próximas e realizadas')}
+    ${item('mProfile', 'user', 'Cadastro', 'Foto, nome, moto e tipo sanguíneo')}
+    ${item('mPlans', 'crown', 'Planos', UI.premium ? 'Bando+ ativo' : 'Conheça o Bando+')}
+    ${item('mContact', 'chat', 'Contato comercial', 'Parcerias, anúncios e motoclubes')}
+   </nav></div></div>`;
+  $('#mX').onclick = closeModal; $('#ov').onclick = e => { if (e.target.id === 'ov') closeModal(); };
+  $('#mHome').onclick = () => { closeAllOverlays(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } $('#v-home').scrollTop = 0; };
+  $('#mTrips').onclick = () => { closeAllOverlays(); store.set('mb-folderOpen', true); if (ROOM) goHome(); else { UI.plan = null; showHome(); } setTimeout(() => { const f = $('#v-home .folder') || $('#v-home .home-active'); if (f) f.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60); };
+  $('#mProfile').onclick = openProfile;
+  $('#mPlans').onclick = () => openPremium();
+  $('#mContact').onclick = openContact;
+}
+function photoFromFile(file) {
+  return new Promise((ok, bad) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => { const S = 192, c = document.createElement('canvas'); c.width = c.height = S; const k = Math.min(img.width, img.height); c.getContext('2d').drawImage(img, (img.width - k) / 2, (img.height - k) / 2, k, k, 0, 0, S, S); URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.82)); };
+    img.onerror = () => { URL.revokeObjectURL(url); bad(); }; img.src = url;
+  });
+}
+function openProfile() {
+  let photo = ME.photo || '';
+  $('#modalRoot').innerHTML = `<div class="overlay" id="ov"><form class="modal" id="profEdit" role="dialog" aria-label="Cadastro">
+   <div class="sec-h"><h2>Cadastro</h2><button class="iconbtn" type="button" id="peX" aria-label="Fechar">${ic('x')}</button></div>
+   <div class="photo-edit"><label class="photo-pick" for="peFile" id="pePrev">${avatarHTML('xxl')}<span class="photo-cam">${ic('camera')}</span></label>
+    <div style="display:flex;flex-direction:column;gap:8px"><label class="btn" for="peFile">${ic('camera')}${photo ? 'Trocar foto' : 'Colocar foto'}</label>${photo ? `<button class="btn ghost" type="button" id="peDel">Tirar foto</button>` : ''}</div>
+    <input type="file" id="peFile" accept="image/*" hidden></div>
+   <div class="field"><label for="peName">Nome ou apelido</label><input class="input" id="peName" maxlength="30" required value="${esc(ME.name || '')}"></div>
+   <div class="field"><label>Tipo sanguíneo <span class="muted" style="font-weight:500">(o grupo vê, e vai junto no SOS)</span></label>
+    <div class="blood-grid">${SANGUE.map(t => `<button type="button" class="blood-opt" data-bt="${t}" aria-pressed="${ME.sangue === t}">${t}</button>`).join('')}<button type="button" class="blood-opt wide" data-bt="" aria-pressed="${!ME.sangue}">Não sei / prefiro não dizer</button></div></div>
+   <div class="eyebrow">Sua moto</div>
+   ${motoPickerHTML('pe', ME.moto.model)}
+   <div class="field"><label>Sua cor no mapa</label><div class="color-row">${COLORS.map(c => `<button type="button" class="color-opt" data-co="${c}" style="background:${c}" aria-label="Cor" aria-pressed="${ME.color === c}"></button>`).join('')}</div></div>
+   <button class="btn primary btn-wide" type="submit">${ic('check')}Salvar</button></form></div>`;
+  let sangue = ME.sangue || '', color = ME.color;
+  bindMotoPicker('pe');
+  const prev = () => { const keep = ME.photo, kc = ME.color; ME.photo = photo; ME.color = color; $('#pePrev').innerHTML = avatarHTML('xxl') + `<span class="photo-cam">${ic('camera')}</span>`; ME.photo = keep; ME.color = kc; };
+  $('#peX').onclick = closeModal; $('#ov').onclick = e => { if (e.target.id === 'ov') closeModal(); };
+  $('#peFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { photo = await photoFromFile(f); prev(); } catch (x) { toast('Não consegui abrir essa foto. Tente outra.'); } };
+  const del = $('#peDel'); if (del) del.onclick = () => { photo = ''; prev(); del.remove(); };
+  document.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => { sangue = b.dataset.bt; document.querySelectorAll('[data-bt]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+  document.querySelectorAll('[data-co]').forEach(b => b.onclick = () => { color = b.dataset.co; document.querySelectorAll('[data-co]').forEach(x => x.setAttribute('aria-pressed', x === b)); prev(); });
+  $('#profEdit').onsubmit = e => {
+    e.preventDefault();
+    ME.name = $('#peName').value.trim() || ME.name; ME.sangue = sangue; ME.color = color; ME.photo = photo; if ($('#peModelo').value) ME.moto.model = $('#peModelo').value;
+    try { saveMe(); } catch (x) { ME.photo = ''; saveMe(); toast('A foto ficou grande demais para guardar. Tente outra.'); }
+    if (UI.wsOk) sendNow(helloMsg()); syncMember(); closeModal(); renderAvatar();
+    if (!$('#v-home').hidden) showHome(); else if (ROOM) refresh();
+    toast('Cadastro salvo');
+  };
+}
+function openContact() {
+  $('#modalRoot').innerHTML = `<div class="overlay" id="ov"><form class="modal" id="ctForm" role="dialog" aria-label="Contato comercial">
+   <div class="sec-h"><h2>Contato comercial</h2><button class="iconbtn" type="button" id="ctX" aria-label="Fechar">${ic('x')}</button></div>
+   <p class="note" style="margin:0">Tem pousada, oficina, loja, posto ou motoclube? Quer anunciar ou fazer parceria com o MotoBando? Mande sua mensagem que a gente responde.</p>
+   <div class="field"><label for="ctAss">Assunto</label><select class="input" id="ctAss"><option>Parceria</option><option>Anunciar no app</option><option>Plano Motoclube</option><option>Imprensa</option><option>Outro</option></select></div>
+   <div class="field"><label for="ctNome">Seu nome</label><input class="input" id="ctNome" maxlength="60" required value="${esc(ME.name || '')}"></div>
+   <div class="field"><label for="ctEmp">Empresa ou clube <span class="muted" style="font-weight:500">(se tiver)</span></label><input class="input" id="ctEmp" maxlength="80"></div>
+   <div class="field"><label for="ctCont">WhatsApp ou e-mail para resposta</label><input class="input" id="ctCont" maxlength="80" required></div>
+   <div class="field"><label for="ctMsg">Mensagem</label><textarea class="input" id="ctMsg" rows="4" maxlength="1500" required></textarea></div>
+   <button class="btn primary btn-wide" type="submit">${ic('chat')}Enviar mensagem</button></form></div>`;
+  $('#ctX').onclick = closeModal; $('#ov').onclick = e => { if (e.target.id === 'ov') closeModal(); };
+  $('#ctForm').onsubmit = async e => {
+    e.preventDefault(); const btn = e.target.querySelector('[type=submit]'); btn.disabled = true;
+    try {
+      const r = await fetch('/api/contato', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assunto: $('#ctAss').value, nome: $('#ctNome').value, empresa: $('#ctEmp').value, contato: $('#ctCont').value, msg: $('#ctMsg').value, user: ME.id }) });
+      const j = await r.json(); if (!j.ok) { btn.disabled = false; return toast(j.msg || 'Não deu para enviar. Tente de novo.'); }
+      closeModal(); toast('Mensagem enviada! Obrigado pelo contato.', 5000);
+    } catch (x) { btn.disabled = false; toast('Sem conexão. Tente de novo.'); }
+  };
+}
+
 /* ================= INÍCIO ================= */
 watchOverlays();
-$('#openPremium').onclick = openPremium;
+syncTripsFromServer();
+$('#avatarBtn').onclick = openUserMenu;
 document.querySelector('.logo').onclick = () => { closeAllOverlays(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } };
 function closeAllOverlays() { $('#modalRoot').innerHTML = ''; if (UI.road) { UI.road = false; renderRoad(); } if (UI.near) { UI.near = false; renderNear(); } }
 document.querySelector('.logo').style.cursor = 'pointer';
-$('#openPremium').innerHTML = ic('crown') + 'Bando+';
+renderAvatar(); planStatus().then(st => { UI.premium = !!(st && st.premium); renderAvatar(); });
 setNet();
 if (CODE && ROOM && ROOM.code === CODE && (!urlCode || urlCode.toUpperCase() === CODE)) { enterRoom(); refresh(); } else showHome();
 connect();
