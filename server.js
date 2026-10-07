@@ -8,7 +8,7 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'rooms.json');
-const ROOM_TTL_DAYS = 30;
+const ROOM_TTL_DAYS = 400; // viagens programadas para o ano inteiro
 
 const app = express();
 app.disable('x-powered-by');
@@ -59,6 +59,57 @@ app.post('/api/overpass', async (req, res) => {
   res.status(502).json({ error: 'Os servidores de mapa estão ocupados. Tente de novo em alguns segundos.' });
 });
 
+// Busca rápida por categoria no buscador do OpenStreetMap (Nominatim): 1 pedido por segundo, com cache
+const NEAR_TAGS = {
+  posto: ['amenity=fuel'],
+  hosp: ['tourism=hotel', 'tourism=guest_house', 'tourism=motel', 'tourism=hostel'],
+  comida: ['amenity=restaurant', 'amenity=cafe', 'amenity=fast_food'],
+  turismo: ['tourism=viewpoint', 'tourism=attraction', 'natural=waterfall'],
+  apoio: ['shop=motorcycle', 'shop=tyres', 'shop=car_repair'],
+};
+const KIND_PT = { fuel: 'Posto', hotel: 'Hotel', guest_house: 'Pousada', motel: 'Motel', hostel: 'Hostel', restaurant: 'Restaurante', cafe: 'Café', fast_food: 'Lanchonete', viewpoint: 'Mirante', attraction: 'Atração', waterfall: 'Cachoeira', motorcycle: 'Loja/oficina de moto', tyres: 'Borracharia', car_repair: 'Oficina' };
+const nearCache = new Map();
+let nomChain = Promise.resolve();
+function nominatim(url) {
+  const p = nomChain.then(async () => {
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 10000);
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'MotoBando/0.1 (https://motobando.onrender.com)', 'Accept-Language': 'pt-BR' }, signal: ctl.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(tm); await new Promise(res => setTimeout(res, 1100)); }
+  });
+  nomChain = p.catch(() => {});
+  return p;
+}
+app.get('/api/near', async (req, res) => {
+  const cat = String(req.query.cat || ''); const lat = +req.query.lat, lng = +req.query.lng;
+  const rk = Math.max(1, Math.min(30, +req.query.r || 10));
+  if (!NEAR_TAGS[cat] || !Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'pedido inválido' });
+  const key = `${cat}:${lat.toFixed(2)}:${lng.toFixed(2)}:${rk}`;
+  const hit = nearCache.get(key);
+  if (hit && Date.now() - hit.t < 60 * 60 * 1000) return res.json(hit.list);
+  const dLa = rk / 111, dLo = rk / (111 * Math.cos(lat * Math.PI / 180));
+  const vb = `${(lng - dLo).toFixed(4)},${(lat + dLa).toFixed(4)},${(lng + dLo).toFixed(4)},${(lat - dLa).toFixed(4)}`;
+  const list = []; const seen = new Set(); let errors = 0;
+  for (const tag of NEAR_TAGS[cat]) {
+    try {
+      const j = await nominatim(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=40&bounded=1&extratags=1&viewbox=${vb}&q=${encodeURIComponent('[' + tag + ']')}`);
+      for (const x of j) {
+        const id = x.osm_type + x.osm_id; if (seen.has(id)) continue; seen.add(id);
+        const et = x.extratags || {};
+        const name = x.name || et.brand || et.operator || KIND_PT[x.type] || 'Sem nome';
+        const addr = (x.display_name || '').split(',').slice(x.name ? 1 : 0, x.name ? 3 : 2).join(',').trim();
+        list.push({ cat, name, lat: +x.lat, lng: +x.lon, kind: KIND_PT[x.type] || '', sub: '', extra: [et.opening_hours === '24/7' ? 'Aberto 24h' : '', addr].filter(Boolean).join(' · ').slice(0, 80), phone: et.phone || et['contact:phone'] || '', web: et.website || et['contact:website'] || '', named: !!x.name });
+      }
+    } catch (e) { errors++; }
+  }
+  if (!list.length && errors) return res.status(502).json({ error: 'buscador ocupado' });
+  nearCache.set(key, { t: Date.now(), list });
+  if (nearCache.size > 1000) nearCache.delete(nearCache.keys().next().value);
+  res.json(list);
+});
+
 // Qualquer /r/CODIGO abre o app (ele lê o código da URL)
 app.get(['/r/:code', '/r/:code/*'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
@@ -88,7 +139,8 @@ function persist() {
 }
 load();
 setInterval(persist, 10000);
-process.on('SIGTERM', () => { dirty = true; persist(); process.exit(0); });
+// ao atualizar, termina os pedidos em andamento antes de desligar
+process.on('SIGTERM', () => { dirty = true; persist(); try { server.close(() => process.exit(0)); } catch (e) {} setTimeout(() => process.exit(0), 9000).unref(); });
 
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function newCode() {
@@ -166,7 +218,7 @@ wss.on('connection', (ws) => {
         sockets.get(ws.user.id).add(ws);
         // reconecta na viagem em que estava
         if (m.code && rooms.has(m.code) && rooms.get(m.code).members[ws.user.id]) attach(ws, rooms.get(m.code));
-        else if (m.code) send(ws, { t: 'left', reason: 'Essa viagem não existe mais ou você saiu dela.' });
+        else if (m.code) send(ws, { t: 'left', reason: 'Essa viagem não existe mais ou você saiu dela.', code: m.code, missing: !rooms.has(m.code) });
         // SOS ativos por perto
         for (const s of sosList.values()) if (s.from.id !== ws.user.id && s.notified.has(ws.user.id)) send(ws, { t: 'sos:new', sos: sosPublic(s) });
         break;
@@ -178,7 +230,7 @@ wss.on('connection', (ws) => {
         const member = cleanMember({ ...m.member, id: ws.user.id, role: 'guia' });
         const r = {
           code, createdAt: Date.now(), updatedAt: Date.now(),
-          trip: cleanTrip({ name: m.trip && m.trip.name, date: m.trip && m.trip.date, startTime: (m.trip && m.trip.startTime) || '07:00', mode: m.trip && m.trip.mode, gap: 5, stops: [], checklist: DEFAULT_CHECK.map((t, i) => ({ id: 'c' + i, t })), route: null, postos: [] }, { guideId: ws.user.id }),
+          trip: cleanTrip({ name: m.trip && m.trip.name, date: m.trip && m.trip.date, startTime: (m.trip && m.trip.startTime) || '07:00', mode: m.trip && m.trip.mode, gap: 5, stops: (m.trip && Array.isArray(m.trip.stops)) ? m.trip.stops : [], checklist: (m.trip && Array.isArray(m.trip.checklist) && m.trip.checklist.length) ? m.trip.checklist : DEFAULT_CHECK.map((t, i) => ({ id: 'c' + i, t })), route: (m.trip && m.trip.route) || null, postos: (m.trip && m.trip.postos) || [] }, { guideId: ws.user.id }),
           members: { [ws.user.id]: member }, expenses: [],
         };
         rooms.set(code, r); dirty = true;
@@ -189,7 +241,15 @@ wss.on('connection', (ws) => {
         if (!ws.user) return;
         const code = clip(m.code, 12).toUpperCase().trim();
         const r = rooms.get(code) || rooms.get('BANDO-' + code.replace(/^BANDO-?/, ''));
-        if (!r) return send(ws, { t: 'error', msg: 'Código não encontrado. Confira com o guia.' });
+        if (!r) {
+          // o servidor pode ter reiniciado: o guia guarda uma cópia e recria a viagem com o mesmo código
+          const snap = m.snap;
+          if (snap && snap.trip && snap.trip.guideId === ws.user.id && /^BANDO-[A-Z0-9]{4}$/.test(code)) {
+            const nr = { code, createdAt: Date.now(), updatedAt: Date.now(), trip: cleanTrip(snap.trip, { guideId: ws.user.id }), members: { [ws.user.id]: cleanMember({ ...m.member, id: ws.user.id, role: 'guia' }) }, expenses: Array.isArray(snap.expenses) ? snap.expenses.slice(0, 300).map(e => ({ id: clip(e.id, 20) || uid(), d: clip(e.d, 60), v: num(e.v), by: clip(e.by, 40), split: (e.split || []).slice(0, 30).map(x => clip(x, 40)), at: num(e.at, Date.now()) })) : [] };
+            rooms.set(code, nr); dirty = true; attach(ws, nr); break;
+          }
+          return send(ws, { t: 'error', msg: 'Código não encontrado. Confira com o guia.', code });
+        }
         if (Object.keys(r.members).length >= 30 && !r.members[ws.user.id]) return send(ws, { t: 'error', msg: 'Esse grupo já está cheio (30 pessoas).' });
         const old = r.members[ws.user.id] || {};
         r.members[ws.user.id] = cleanMember({ ...m.member, id: ws.user.id, role: old.role === 'guia' ? 'guia' : (m.member && m.member.role) || 'integrante' }, old);

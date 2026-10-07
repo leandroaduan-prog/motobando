@@ -28,6 +28,18 @@ saveMe();
 let CODE = store.get('mb-code', null);
 let ROOM = store.get('mb-room', null); // última cópia (funciona sem sinal)
 const UI = { tab: 'mapa', nav: false, road: false, near: false, nearRef: 'me', nearCat: 'posto', nearRes: null, poi: null, picking: false, userMovedMap: 0, notices: [], rain: null, rainKey: '', sosMine: null, sosIn: [], bigSeen: {}, big: null, fitted: false, wsOk: false };
+/* pasta "Minhas viagens": cópia local de cada viagem (o guia guarda a viagem inteira para recriar se o servidor esquecer) */
+let TRIPS = store.get('mb-trips', {});
+function saveTripLocal(room) {
+  if (!room || !room.members[ME.id]) return;
+  const m = room.members[ME.id], guide = room.trip.guideId === ME.id;
+  TRIPS[room.code] = { gone: false, code: room.code, name: room.trip.name, date: room.trip.date, startTime: room.trip.startTime, mode: room.trip.mode, role: m.role, guide,
+    stops: room.trip.stops.length, dist: room.trip.route ? room.trip.route.dist_km : null, members: Object.keys(room.members).length, updatedAt: Date.now(),
+    snap: guide ? { trip: room.trip, expenses: room.expenses } : null };
+  store.set('mb-trips', TRIPS);
+}
+function dropTripLocal(code) { delete TRIPS[code]; store.set('mb-trips', TRIPS); }
+function openTrip(code) { const t = TRIPS[code]; send({ t: 'join', code, member: memberPayload(t && t.role === 'garupa' ? 'garupa' : (t && t.guide ? 'guia' : 'integrante')), snap: t && t.snap }); toast('Abrindo a viagem…'); }
 const urlCode = (location.pathname.match(/^\/r\/([A-Z0-9-]+)/i) || [])[1];
 
 /* ================= CONEXÃO ================= */
@@ -53,8 +65,13 @@ window.addEventListener('online', () => { if (!UI.wsOk) { wsRetry = 0; connect()
 
 function onMsg(m) {
   switch (m.t) {
-    case 'joined': CODE = m.code; store.set('mb-code', CODE); if (urlCode) history.replaceState(null, '', '/'); break;
+    case 'joined':
+      if (UI.batch) { UI.batch.codes.push(m.code); break; }
+      CODE = m.code; store.set('mb-code', CODE); if (urlCode) history.replaceState(null, '', '/'); break;
     case 'room': {
+      saveTripLocal(m.room);
+      if (UI.batch) { if (UI.batch.resolve) { const r = UI.batch.resolve; UI.batch.resolve = null; r(); } break; }
+      if (!CODE || m.room.code !== CODE) { if (!ROOM && !$('#v-home').hidden && !document.activeElement.matches('input,select')) showHome(); break; } // outra viagem minha: só atualiza a pasta
       const first = !ROOM || ROOM.code !== m.room.code;
       ROOM = m.room; store.set('mb-room', ROOM);
       if (first) { UI.fitted = false; enterRoom(); }
@@ -62,8 +79,15 @@ function onMsg(m) {
       break;
     }
     case 'pos': if (ROOM && ROOM.members[m.id]) { ROOM.members[m.id].pos = m.pos; ROOM.members[m.id].online = true; onPositions(); } break;
-    case 'left': CODE = null; ROOM = null; store.set('mb-code', null); store.set('mb-room', null); if (m.reason) toast(m.reason); showHome(); break;
-    case 'error': toast(esc(m.msg)); break;
+    case 'left':
+      if (m.missing && m.code && TRIPS[m.code]) {
+        // o servidor reiniciou e esqueceu a viagem: o guia recria com a cópia guardada; os outros esperam o guia
+        if (TRIPS[m.code].guide && TRIPS[m.code].snap) { openTrip(m.code); break; }
+        TRIPS[m.code].gone = true; store.set('mb-trips', TRIPS); CODE = null; ROOM = null; store.set('mb-code', null); store.set('mb-room', null);
+        toast('O servidor reiniciou. Peça para o guia abrir a viagem e depois toque nela de novo.', 7000); showHome(); break;
+      }
+      if (CODE) dropTripLocal(CODE); CODE = null; ROOM = null; store.set('mb-code', null); store.set('mb-room', null); if (m.reason) toast(m.reason); showHome(); break;
+    case 'error': toast(esc(m.msg)); if (m.code && TRIPS[m.code] && !TRIPS[m.code].guide) { TRIPS[m.code].gone = true; store.set('mb-trips', TRIPS); if (!ROOM) showHome(); } break;
     case 'notice': {
       const txt = { stop: `${esc(m.name)} pediu parada`, fuel: `${esc(m.name)} precisa abastecer`, regroup: `${esc(m.name)}: vamos reagrupar no próximo ponto seguro`, ok: `${esc(m.name)}: tudo certo` }[m.kind] || esc(m.name);
       UI.notices.push({ txt, kind: m.kind, ts: Date.now() }); toast(txt, 6000); vibrate([300, 150, 300]); beep();
@@ -479,15 +503,19 @@ function showHome() {
      <div class="field"><label for="pName">Seu nome ou apelido</label><input class="input" id="pName" maxlength="30" required autocomplete="nickname" placeholder="Ex.: Leandro"></div>
      <div class="field"><label for="pMoto">Sua moto (se for de garupa, escolha qualquer uma)</label><select class="input" id="pMoto">${motoOpts}</select></div>
      <button class="btn primary btn-wide" type="submit">Continuar</button></form>` : `
+   ${urlCode ? '' : tripListHTML()}
    ${urlCode ? `<div class="banner amber" style="box-shadow:none">${ic('users')}<div>Você recebeu o convite <b>${esc(urlCode)}</b>. Escolha como vai: pilotando ou de garupa.</div></div>` : ''}
    <form class="card" id="joinForm" style="display:flex;flex-direction:column;gap:12px">
      <div class="eyebrow">Entrar num grupo</div>
      <div class="field"><label for="jCode">Código do grupo</label><input class="input" id="jCode" required placeholder="BANDO-7K2Q" value="${esc(urlCode || '')}" autocapitalize="characters" style="font-family:var(--f-display);font-size:22px;letter-spacing:.1em"></div>
      <div class="seg" role="group" aria-label="Como você vai"><button type="button" data-jr="integrante" aria-pressed="true">Vou pilotando</button><button type="button" data-jr="garupa" aria-pressed="false">Vou de garupa</button></div>
      <button class="btn primary btn-wide" type="submit">${ic('users')}Entrar no grupo</button></form>
-   <div class="eyebrow">Ou monte a sua</div>
+   <div class="eyebrow">Nova viagem</div>
    <button class="choice primary" type="button" id="newGroup">${ic('users')}<div><b>Criar viagem em grupo</b><span>Você é o guia: monta a rota, as paradas e manda o código</span></div></button>
-   <button class="choice" type="button" id="newSolo">${ic('helmet')}<div><b>Viagem solo</b><span>Você monta tudo. Se levar garupa, ele entra com o código</span></div></button>
+   <button class="choice" type="button" id="newSolo">${ic('helmet')}<div><b>Viagem solo</b><span>Você monta tudo. Se virar grupo depois, é só ligar a chave</span></div></button>
+   <details class="card"><summary style="font-weight:700;cursor:pointer;min-height:36px">Carregar viagens de exemplo</summary>
+    <p class="note">Rotas clássicas de moto já montadas, uma por mês. Servem para ver como fica a pasta e para usar como modelo.</p>
+    <div style="display:flex;flex-direction:column;gap:10px"><button class="btn btn-wide" type="button" id="ex15">${ic('users')}Guia: 15 viagens em grupo no ano</button><button class="btn btn-wide" type="button" id="ex10">${ic('helmet')}Solo: 10 viagens no ano</button></div></details>
    <p class="legal">Mapa © colaboradores do OpenStreetMap. Rotas: OSRM. Previsão do tempo: Open-Meteo.</p>`}
   </div>`;
   const pf = $('#profForm'); if (pf) pf.onsubmit = e => { e.preventDefault(); ME.name = $('#pName').value.trim(); ME.moto.model = $('#pMoto').value; saveMe(); if (UI.wsOk) sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: MOTOS[ME.moto.model].n, color: ME.color }, sosCfg: ME.sosCfg }); showHome(); };
@@ -495,8 +523,55 @@ function showHome() {
   document.querySelectorAll('[data-jr]').forEach(b => b.onclick = () => { joinRole = b.dataset.jr; document.querySelectorAll('[data-jr]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
   const jf = $('#joinForm'); if (jf) jf.onsubmit = e => { e.preventDefault(); let c = $('#jCode').value.trim().toUpperCase().replace(/\s/g, ''); if (!c.startsWith('BANDO-')) c = 'BANDO-' + c.replace(/^BANDO/, ''); send({ t: 'join', code: c, member: memberPayload(joinRole) }); toast('Entrando…'); };
   const ng = $('#newGroup'); if (ng) ng.onclick = () => createTrip('grupo');
+  bindTripList();
+  const e15 = $('#ex15'); if (e15) e15.onclick = () => loadExamples('grupo', 15, 24);
+  const e10 = $('#ex10'); if (e10) e10.onclick = () => loadExamples('solo', 10, 35);
   const ns = $('#newSolo'); if (ns) ns.onclick = () => createTrip('solo');
 }
+function tripListHTML() {
+  const list = Object.values(TRIPS).sort((a, b) => String(a.date || '9').localeCompare(String(b.date || '9')));
+  if (!list.length) return '';
+  const today = new Date().toISOString().slice(0, 10);
+  const next = list.filter(t => !t.date || t.date >= today), past = list.filter(t => t.date && t.date < today).reverse();
+  const card = t => { const d = t.date ? new Date(t.date + 'T12:00:00') : null; const role = t.mode === 'solo' ? 'Solo' : t.guide ? 'Guia' : t.role === 'garupa' ? 'Garupa' : 'Integrante';
+    return `<div class="trip-card ${t.gone ? 'gone' : ''}"><button type="button" class="trip-open" data-open="${esc(t.code)}"><span class="trip-date">${d ? `<b>${d.getDate()}</b>${d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}` : '<b>?</b>data'}</span><span class="trip-info"><b>${esc(t.name)}</b><span>${esc(role)} · ${t.stops} parada${t.stops === 1 ? '' : 's'}${t.dist ? ' · ' + f0(t.dist) + ' km' : ''}${t.mode !== 'solo' && t.members > 1 ? ' · ' + t.members + ' pessoas' : ''}${t.gone ? ' · não existe mais' : ''}</span></span></button>
+     <div class="trip-acts">${t.guide ? `<button class="iconbtn" type="button" data-dup="${esc(t.code)}" aria-label="Duplicar como modelo">${ic('copy')}</button>` : ''}<button class="iconbtn" type="button" data-rm="${esc(t.code)}" aria-label="Remover da pasta">${ic('trash')}</button></div></div>`; };
+  return `<section style="display:flex;flex-direction:column;gap:10px"><div class="sec-h"><h2>Minhas viagens</h2><span class="pill green">${list.length}</span></div>
+   ${next.length ? `<div class="eyebrow">Próximas</div><div class="trip-list">${next.map(card).join('')}</div>` : ''}
+   ${past.length ? `<details><summary class="eyebrow" style="cursor:pointer;min-height:32px">Já feitas (${past.length})</summary><div class="trip-list" style="margin-top:8px">${past.map(card).join('')}</div></details>` : ''}</section>`;
+}
+function bindTripList() {
+  document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openTrip(b.dataset.open));
+  document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
+    const t = TRIPS[b.dataset.rm]; if (!t) return;
+    $('#modalRoot').innerHTML = `<div class="overlay center"><div class="incoming" style="border-color:var(--line)"><h2 style="margin:0;font-family:var(--f-display);font-size:26px">Remover “${esc(t.name)}”?</h2><p class="muted" style="margin:0">${t.guide && t.mode !== 'solo' && t.members > 1 ? 'Você sai do grupo e o papel de guia passa para outra pessoa.' : 'A viagem sai da sua pasta.'}</p><div class="row"><button class="btn" style="flex:1;color:var(--sos)" type="button" id="rmYes">Remover</button><button class="btn primary" style="flex:1" type="button" id="rmNo">Manter</button></div></div></div>`;
+    $('#rmYes').onclick = () => { $('#modalRoot').innerHTML = ''; if (!t.gone) send({ t: 'join', code: t.code, member: memberPayload(t.guide ? 'guia' : t.role), snap: t.snap }), setTimeout(() => send({ t: 'leave' }), 600); dropTripLocal(t.code); showHome(); };
+    $('#rmNo').onclick = () => $('#modalRoot').innerHTML = '';
+  });
+  document.querySelectorAll('[data-dup]').forEach(b => b.onclick = () => {
+    const t = TRIPS[b.dataset.dup]; if (!t || !t.snap) return;
+    const tr = t.snap.trip;
+    send({ t: 'create', trip: { name: tr.name + ' (cópia)', date: '', startTime: tr.startTime, mode: tr.mode, stops: tr.stops, checklist: tr.checklist, route: tr.route, postos: tr.postos }, member: memberPayload('guia') });
+    UI.afterCreate = true; toast('Viagem duplicada. Ajuste a data.');
+  });
+}
+// cria as viagens de exemplo uma a uma e guarda na pasta
+async function loadExamples(mode, n, every) {
+  if (!UI.wsOk) return toast('Sem conexão com o servidor. Tente de novo.');
+  const dates = exemploDatas(n, every); const pick = mode === 'solo' ? [1, 4, 5, 7, 8, 11, 2, 3, 6, 9] : [...Array(15).keys()];
+  UI.batch = { codes: [] };
+  for (let i = 0; i < n; i++) {
+    const ex = EXEMPLOS[pick[i]];
+    const stops = ex.st.map(([name, lat, lng, ty]) => ({ id: uid(), name, lat, lng, type: EX_TYPE[ty], note: '' }));
+    await new Promise(res => { UI.batch.resolve = res; send({ t: 'create', trip: { name: ex.n, date: dates[i], startTime: '07:00', mode, stops }, member: memberPayload('guia') }); setTimeout(res, 4000); });
+    toast(`Criando exemplos… ${i + 1} de ${n}`);
+  }
+  UI.batch = null;
+  if (CODE) send({ t: 'join', code: CODE, member: memberPayload(), snap: TRIPS[CODE] && TRIPS[CODE].snap }); // volta para a viagem aberta
+  toast(`${n} viagens de exemplo salvas na sua pasta. A rota é calculada quando você abre cada uma.`, 6000);
+  showHome();
+}
+function goHome() { CODE = null; store.set('mb-code', null); ROOM = null; UI.road = false; renderRoad(); showHome(); }
 function memberPayload(role) { return { id: ME.id, name: ME.name, color: ME.color, role: role || (meM() || {}).role || 'integrante', garupaOf: (meM() || {}).garupaOf || '', moto: ME.moto, checks: (meM() || {}).checks || {} }; }
 function createTrip(mode) {
   const d = new Date(); d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7)); // próximo sábado
@@ -524,6 +599,7 @@ function enterRoom() {
   $('#v-home').hidden = true; $('#tabs').hidden = false;
   initMap(); startGPS(); keepAwake(true);
   if (UI.afterCreate) { UI.afterCreate = false; go('viagem'); } else go(UI.tab || 'mapa');
+  setTimeout(() => { if (ROOM && isGuide() && ROOM.trip.stops.length >= 2 && !ROOM.trip.route && !routing) { toast('Calculando a rota desta viagem…'); recalcRoute(); } }, 800);
 }
 function refresh() {
   if (!ROOM) return;
@@ -582,7 +658,7 @@ function shareRouteText() {
     st.map((s, i) => `${s.km != null && ROOM.trip.route ? hhmm(timeAt(s.km)) : (i + 1) + '.'}  ${s.name}${s.km != null ? ' (km ' + f0(s.km) + ')' : ''}`).join('\n') +
     `\n\nRoteiro e mapa: ${location.origin}/r/${ROOM.code}`;
 }
-function shareCodeText() { return `Bora rodar junto? Entra no meu bando no MotoBando.\nViagem: ${ROOM.trip.name}, ${fmtDate(ROOM.trip.date)}\nCódigo do grupo: ${ROOM.code}\n\nAbre aqui: ${location.origin}/r/${ROOM.code}`; }
+function shareCodeText() { return `Bora rodar junto? Entra no meu bando no MotoBando.\nViagem: ${ROOM.trip.name}, ${fmtDate(ROOM.trip.date)}\n\n1. Abra o link: ${location.origin}/r/${ROOM.code}\n2. Faça seu cadastro (nome e moto)\n3. Entre com o código: ${ROOM.code}`; }
 const waLink = t => 'https://wa.me/?text=' + encodeURIComponent(t);
 function fmtDate(d) { if (!d) return 'data a combinar'; const x = new Date(d + 'T12:00:00'); return x.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }); }
 function copyText(t, ok) { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast(ok)).catch(() => toast('Não deu para copiar. Use o botão do WhatsApp.')); }
@@ -601,11 +677,12 @@ function renderViagem() {
   $('#v-viagem').innerHTML = `<div class="pad">
   <div class="sign"><div class="eyebrow">${solo ? 'Viagem solo' : 'Viagem do bando'} · ${esc(fmtDate(ROOM.trip.date))}</div><h1>${esc(ROOM.trip.name)}</h1>
    <div class="sign-row"><span><b class="num">${R ? f0(R.total) : '—'}</b> km</span><span>Saída <b>${esc(ROOM.trip.startTime)}</b></span>${R ? `<span>Chegada <b class="num">${hhmm(timeAt(R.total))}</b></span>` : ''}<span><b>${rs.length}</b> moto${rs.length > 1 ? 's' : ''} · <b>${ms.length}</b> pessoa${ms.length > 1 ? 's' : ''}</span></div></div>
+  <button class="btn btn-wide" type="button" id="toFolder">${ic('list')}Minhas viagens</button>
+  ${G ? `<div class="card mode-switch"><div class="toggle-row"><div><b>${solo ? 'Viagem solo' : 'Viagem em grupo'}</b><div class="note">${solo ? 'Ligue para virar grupo: você vira o guia e manda a rota e o código para quem vai junto.' : 'Você é o guia. Desligue para voltar a ser viagem solo.'}</div></div><input type="checkbox" class="switch" id="modeSwitch" ${solo ? '' : 'checked'} aria-label="Viagem em grupo"></div></div>` : ''}
   ${G ? `<details class="card" ${ROOM.trip.stops.length ? '' : 'open'}><summary style="font-weight:700;cursor:pointer;min-height:32px">Dados da viagem</summary>
    <form id="tripForm" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
     <div class="field"><label for="tName">Nome</label><input class="input" id="tName" maxlength="60" value="${esc(ROOM.trip.name)}"></div>
     <div class="row"><div class="field"><label for="tDate">Data</label><input class="input" id="tDate" type="date" value="${esc(ROOM.trip.date || '')}"></div><div class="field"><label for="tTime">Saída</label><input class="input" id="tTime" type="time" value="${esc(ROOM.trip.startTime)}"></div></div>
-    <div class="seg" role="group"><button type="button" data-mode="solo" aria-pressed="${solo}">${ic('helmet')} Solo</button><button type="button" data-mode="grupo" aria-pressed="${!solo}">${ic('users')} Em grupo</button></div>
     <button class="btn primary btn-wide" type="submit">Salvar</button></form></details>` : ''}
 
   <section class="card" style="display:flex;flex-direction:column;gap:12px">
@@ -691,7 +768,11 @@ function renderViagem() {
  </div>`;
   const v = $('#v-viagem');
   const tf = $('#tripForm'); if (tf) tf.onsubmit = e => { e.preventDefault(); patchTrip({ name: $('#tName').value.trim(), date: $('#tDate').value, startTime: $('#tTime').value || '07:00' }); toast('Viagem salva'); };
-  v.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { patchTrip({ mode: b.dataset.mode }); toast(b.dataset.mode === 'solo' ? 'Viagem solo' : 'Viagem em grupo'); });
+  $('#toFolder').onclick = goHome;
+  const mSw = $('#modeSwitch'); if (mSw) mSw.onchange = e => {
+    const toGroup = e.target.checked; ROOM.trip.mode = toGroup ? 'grupo' : 'solo'; patchTrip({ mode: ROOM.trip.mode });
+    if (toGroup) showInvite(); else toast('Agora é viagem solo');
+  };
   $('#copyCode').onclick = () => copyText(ROOM.code, 'Código copiado');
   const sf = $('#searchForm'); if (sf) sf.onsubmit = async e => {
     e.preventDefault(); const q = $('#sQ').value.trim(); const box = $('#searchRes'); box.innerHTML = '<p class="empty"><span class="spinner"></span> Buscando…</p>';
@@ -729,6 +810,17 @@ function renderViagem() {
     $('#lvYes').onclick = () => { $('#modalRoot').innerHTML = ''; setSim(false); send({ t: 'leave' }); };
     $('#lvNo').onclick = () => $('#modalRoot').innerHTML = '';
   };
+}
+
+function showInvite() {
+  $('#modalRoot').innerHTML = `<div class="overlay"><div class="modal" role="dialog" aria-label="Convidar o bando">
+   <div class="sec-h"><h2>Virou viagem em grupo!</h2><button class="iconbtn" type="button" id="invX" aria-label="Fechar">${ic('x')}</button></div>
+   <p class="muted" style="margin:0">Você agora é o guia. A rota e as paradas já estão montadas. Mande o convite: quem receber faz o cadastro (nome e moto) e entra com o código.</p>
+   <div class="code-box"><div><div class="note">Código do grupo</div><code>${esc(ROOM.code)}</code></div></div>
+   <a class="btn wa btn-wide" href="${waLink(shareCodeText())}" target="_blank" rel="noopener">${ic('wa')}Enviar convite e código pelo WhatsApp</a>
+   <a class="btn wa btn-wide" href="${waLink(shareRouteText())}" target="_blank" rel="noopener">${ic('wa')}Enviar o roteiro pelo WhatsApp</a>
+   <button class="btn btn-wide" type="button" id="invOk">Depois eu mando</button></div></div>`;
+  $('#invX').onclick = $('#invOk').onclick = () => $('#modalRoot').innerHTML = '';
 }
 
 /* ================= MOTO ================= */
@@ -906,6 +998,8 @@ function openPremium() {
 
 /* ================= INÍCIO ================= */
 $('#openPremium').onclick = openPremium;
+document.querySelector('.logo').onclick = () => { if (ROOM) goHome(); };
+document.querySelector('.logo').style.cursor = 'pointer';
 $('#openPremium').innerHTML = ic('crown') + 'Bando+';
 setNet();
 if (CODE && ROOM && ROOM.code === CODE && (!urlCode || urlCode.toUpperCase() === CODE)) { enterRoom(); refresh(); } else showHome();

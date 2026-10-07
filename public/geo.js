@@ -119,6 +119,13 @@ const GEO = (() => {
     return { kind, sub, extra };
   }
   async function near(cat, lat, lng, radius = 8000) {
+    // rápido: buscador do OpenStreetMap pelo nosso servidor (trilhas usam o Overpass)
+    if (cat !== 'trilha') {
+      try {
+        const list = await getJSON(`/api/near?cat=${cat}&lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}&r=${Math.round(radius / 1000)}`, {}, 25000);
+        if (Array.isArray(list) && list.length) return list;
+      } catch (e) { /* cai para o Overpass */ }
+    }
     const parts = FILTERS[cat].map(f => `nwr(around:${radius},${lat.toFixed(5)},${lng.toFixed(5)})${f};`).join('');
     const j = await overpass(`[out:json][timeout:20];(${parts});out center tags 60;`);
     const seen = new Set();

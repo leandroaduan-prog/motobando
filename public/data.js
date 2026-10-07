@@ -100,3 +100,28 @@ const CAT={
 const STOPTYPES={saida:{n:'Saída',icon:'flag',min:0},parada:{n:'Parada',icon:'star',min:20},abastecer:{n:'Abastecer',icon:'fuel',min:15},almoco:{n:'Almoço',icon:'food',min:60},foto:{n:'Foto / mirante',icon:'camera',min:20},pernoite:{n:'Pernoite / destino',icon:'bed',min:0}};
 const SOSTYPES={pane:{n:'Pane mecânica',icon:'tool'},pneu:{n:'Pneu furado',icon:'tire'},seca:{n:'Pane seca',icon:'fuel'},acidente:{n:'Acidente',icon:'heart'}};
 const COLORS=['#1F7A4D','#2F6FD6','#C2410C','#7C3AED','#A16207','#0891B2','#DB2777','#4D7C0F','#B91C1C','#0F766E','#9333EA','#EA580C'];
+
+/* Viagens de exemplo: rotas clássicas de moto (coordenadas reais das cidades). Tipo: s=saída, p=parada, a=almoço, f=foto, d=destino */
+const EXEMPLOS = [
+ { n: 'Serra da Mantiqueira', st: [['Atibaia', -23.117, -46.550, 's'], ['Extrema', -22.855, -46.318, 'p'], ['Monte Verde', -22.862, -46.040, 'a'], ['Campos do Jordão', -22.739, -45.591, 'd']] },
+ { n: 'Circuito das Águas', st: [['Atibaia', -23.117, -46.550, 's'], ['Bragança Paulista', -22.952, -46.542, 'p'], ['Socorro', -22.591, -46.529, 'a'], ['Águas de Lindóia', -22.476, -46.633, 'f'], ['Serra Negra', -22.612, -46.700, 'd']] },
+ { n: 'Litoral Norte pela Tamoios', st: [['Atibaia', -23.117, -46.550, 's'], ['São José dos Campos', -23.179, -45.887, 'p'], ['Caraguatatuba', -23.620, -45.413, 'a'], ['Ubatuba', -23.433, -45.071, 'd']] },
+ { n: 'Cunha e Paraty', st: [['Atibaia', -23.117, -46.550, 's'], ['Taubaté', -23.026, -45.555, 'p'], ['Cunha', -23.074, -44.960, 'a'], ['Paraty', -23.219, -44.713, 'd']] },
+ { n: 'São Bento do Sapucaí e Gonçalves', st: [['Atibaia', -23.117, -46.550, 's'], ['Cambuí', -22.612, -46.057, 'p'], ['Gonçalves', -22.659, -45.855, 'a'], ['São Bento do Sapucaí', -22.689, -45.731, 'd']] },
+ { n: 'Joanópolis e Piracaia', st: [['Atibaia', -23.117, -46.550, 's'], ['Piracaia', -23.054, -46.358, 'p'], ['Joanópolis', -22.930, -46.275, 'a'], ['Bragança Paulista', -22.952, -46.542, 'd']] },
+ { n: 'Ilhabela', st: [['Atibaia', -23.117, -46.550, 's'], ['São José dos Campos', -23.179, -45.887, 'p'], ['São Sebastião (balsa)', -23.760, -45.410, 'a'], ['Ilhabela', -23.778, -45.358, 'd']] },
+ { n: 'Brotas', st: [['Atibaia', -23.117, -46.550, 's'], ['Campinas', -22.906, -47.061, 'p'], ['Holambra', -22.640, -47.055, 'f'], ['Brotas', -22.284, -48.127, 'd']] },
+ { n: 'Poços de Caldas', st: [['Atibaia', -23.117, -46.550, 's'], ['Bragança Paulista', -22.952, -46.542, 'p'], ['Águas da Prata', -21.937, -46.716, 'a'], ['Poços de Caldas', -21.788, -46.561, 'd']] },
+ { n: 'Capitólio', st: [['Atibaia', -23.117, -46.550, 's'], ['Poços de Caldas', -21.788, -46.561, 'a'], ['Passos', -20.719, -46.610, 'p'], ['Capitólio', -20.615, -46.050, 'd']] },
+ { n: 'Serra da Canastra', st: [['Atibaia', -23.117, -46.550, 's'], ['Poços de Caldas', -21.788, -46.561, 'a'], ['Passos', -20.719, -46.610, 'p'], ['São Roque de Minas', -20.249, -46.366, 'd']] },
+ { n: 'São Luiz do Paraitinga', st: [['Atibaia', -23.117, -46.550, 's'], ['Taubaté', -23.026, -45.555, 'p'], ['São Luiz do Paraitinga', -23.222, -45.310, 'd']] },
+ { n: 'Serra do Rio do Rastro', st: [['Florianópolis', -27.595, -48.548, 's'], ['Lauro Müller', -28.393, -49.397, 'a'], ['Bom Jardim da Serra', -28.337, -49.627, 'f'], ['Urubici', -28.015, -49.592, 'd']] },
+ { n: 'Rota do Vinho e Serra Gaúcha', st: [['Bento Gonçalves', -29.171, -51.519, 's'], ['Garibaldi', -29.256, -51.534, 'p'], ['Gramado', -29.379, -50.874, 'a'], ['Canela', -29.366, -50.816, 'd']] },
+ { n: 'Chapada dos Veadeiros', st: [['Brasília', -15.794, -47.882, 's'], ['Alto Paraíso de Goiás', -14.132, -47.510, 'a'], ['São Jorge', -14.172, -47.817, 'd']] }
+];
+const EX_TYPE = { s: 'saida', p: 'parada', a: 'almoco', f: 'foto', d: 'pernoite' };
+// datas: um sábado por mês a partir do mês que vem (15 viagens = ~1 por mês; 10 viagens solo = a cada 5 semanas)
+function exemploDatas(n, everyDays) {
+  const d = new Date(); d.setDate(d.getDate() + 14); d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
+  return Array.from({ length: n }, (_, i) => { const x = new Date(d.getTime() + i * everyDays * 864e5); x.setDate(x.getDate() + ((6 - x.getDay() + 7) % 7)); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; });
+}

@@ -428,3 +428,16 @@ a.btn.primary,a.btn.wa{color:#fff}
 main{isolation:isolate}
 .road{z-index:1500}.overlay{z-index:1800}.big-alert{z-index:2000}.toast{z-index:2100}
 @media (max-width:430px){.btn-plus{font-size:0;gap:0;padding:8px}.btn-plus .ic{width:20px;height:20px}.plate{font-size:16px}}
+/* pasta de viagens */
+.trip-list{display:flex;flex-direction:column;gap:8px}
+.trip-card{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:6px 8px 6px 6px}
+.trip-card.gone{opacity:.55}
+.trip-open{flex:1;min-width:0;display:flex;align-items:center;gap:12px;border:0;background:none;text-align:left;padding:6px;min-height:64px}
+.trip-date{width:52px;height:56px;border-radius:12px;background:var(--road);color:var(--road-ink);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700;text-transform:uppercase;flex:none;box-shadow:inset 0 0 0 2px var(--road),inset 0 0 0 3.5px rgba(255,255,255,.85)}
+.trip-date b{font-family:var(--f-display);font-size:24px;line-height:1}
+.trip-info{min-width:0;display:flex;flex-direction:column}
+.trip-info b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trip-info span{font-size:13px;color:var(--muted)}
+.trip-acts{display:flex;gap:6px}
+.mode-switch{border:2px solid var(--road);background:var(--road-soft)}
+.trip-info b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.2}
