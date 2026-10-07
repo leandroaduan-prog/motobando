@@ -143,7 +143,10 @@ module.exports = function setupPlanner(app, { nominatim, nearOSM, overpassQuery,
       const inDay = s => s.km >= day.fromKm && s.km < day.toKm;
       day.stops.push(...fuelStops.filter(inDay));
       if (dk >= 140) {
-        const lk = day.fromKm + Math.min(dk * 0.5, 4 * avgKmh);
+        // almoço perto do meio-dia: km rodado entre a saída e 12h (descontando paradas), sem passar do fim do dia
+        const startMin = (+(inp.startTime || '07:00').slice(0, 2)) * 60 + (+(inp.startTime || '07:00').slice(3, 5));
+        const rideToNoon = Math.max(1.5, (12 * 60 - startMin - 30) / 60);
+        const lk = day.fromKm + Math.min(Math.max(dk * 0.35, rideToNoon * avgKmh), dk - 30);
         const p = pointAt(R, lk);
         const x = bestOf(await places('comida', p.lat, p.lng, 8), R, 6);
         if (x) day.stops.push(stopOf('almoco', x, R));

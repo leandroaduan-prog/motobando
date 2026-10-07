@@ -239,6 +239,7 @@ function initMap() {
     if (UI.poi) { UI.poi = null; renderPoiCard(); }
   });
   $('#zin').innerHTML = ic('plus'); $('#zout').innerHTML = ic('minus'); $('#zfit').innerHTML = ic('expand'); $('#zme').innerHTML = ic('target');
+  const zr = document.createElement('button'); zr.className = 'iconbtn'; zr.type = 'button'; zr.id = 'zref'; zr.setAttribute('aria-label', 'Atualizar'); zr.innerHTML = ic('refresh'); zr.onclick = softRefresh; $('.map-ctrl').appendChild(zr);
   $('#zin').onclick = () => map.zoomIn(); $('#zout').onclick = () => map.zoomOut();
   $('#zfit').onclick = () => { UI.userMovedMap = Date.now(); fitRoute(); };
   $('#zme').onclick = () => { UI.userMovedMap = 0; if (myPos) programmatic(() => map.setView([myPos.lat, myPos.lng], Math.max(map.getZoom(), 14))); else toast('Ainda sem posição de GPS'); };
@@ -494,6 +495,7 @@ function filled() { ME.moto.fuel = 100; ME.moto.markKm = myKm() || 0; saveMe(); 
 
 /* ================= HOME / ENTRADA ================= */
 function showHome() {
+  pushNav('home');
   ['mapa', 'viagem', 'sos', 'moto', 'contas', 'plan'].forEach(k => $('#v-' + k).hidden = true);
   $('#tabs').hidden = true; $('#v-home').hidden = false;
   $('#tripTitle').textContent = 'MotoBando'; $('#tripSub').textContent = ME.name ? 'Olá, ' + ME.name : 'Viagem de moto em bando';
@@ -505,6 +507,7 @@ function showHome() {
      <div class="field"><label for="pName">Seu nome ou apelido</label><input class="input" id="pName" maxlength="30" required autocomplete="nickname" placeholder="Ex.: Leandro"></div>
      <div class="field"><label for="pMoto">Sua moto (se for de garupa, escolha qualquer uma)</label><select class="input" id="pMoto">${motoOpts}</select></div>
      <button class="btn primary btn-wide" type="submit">Continuar</button></form>` : `
+   ${installHTML()}
    ${urlCode ? '' : activeTripHTML() + tripListHTML()}
    ${urlCode ? `<div class="banner amber" style="box-shadow:none">${ic('users')}<div>Você recebeu o convite <b>${esc(urlCode)}</b>. Escolha como vai: pilotando ou de garupa.</div></div>` : ''}
    <form class="card" id="joinForm" style="display:flex;flex-direction:column;gap:12px">
@@ -528,6 +531,7 @@ function showHome() {
   const jf = $('#joinForm'); if (jf) jf.onsubmit = e => { e.preventDefault(); let c = $('#jCode').value.trim().toUpperCase().replace(/\s/g, ''); if (!c.startsWith('BANDO-')) c = 'BANDO-' + c.replace(/^BANDO/, ''); send({ t: 'join', code: c, member: memberPayload(joinRole) }); toast('Entrando…'); };
   const ng = $('#newGroup'); if (ng) ng.onclick = () => createTrip('grupo');
   bindTripList();
+  const ib = $('#installBtn'); if (ib) ib.onclick = doInstall;
   const na = $('#newAuto'); if (na) na.onclick = showPlanner;
   const gb = $('#homeBorders'); if (gb) gb.onclick = showBorders;
   const e15 = $('#ex15'); if (e15) e15.onclick = () => loadExamples('grupo', 15, 24);
@@ -600,6 +604,7 @@ function renderTabs() {
   $('#tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => go(b.dataset.t));
 }
 function go(t) {
+  pushNav('trip:' + t);
   UI.tab = t;
   TABS.forEach(([k]) => $('#v-' + k).hidden = k !== t);
   renderTabs();
@@ -994,7 +999,7 @@ function showIncomingSOS(s) {
    <div class="row"><button class="btn primary" type="button" id="goHelp" style="flex:1">Estou indo</button><button class="btn" type="button" id="noHelp" style="flex:1">Agora não posso</button></div>
    ${s.lat || s.lng ? `<a class="btn btn-wide" href="${gmapsLink(s)}" target="_blank" rel="noopener">${ic('route')}Rota até ele no Google Maps</a>` : ''}
   </div></div>`;
-  $('#goHelp').onclick = () => { send({ t: 'sos:go', id: s.id }); $('#modalRoot').innerHTML = ''; toast(`${esc(s.from.name)} foi avisado que você está a caminho`); if (s.lat || s.lng) window.open(gmapsLink(s), '_blank', 'noopener'); };
+  $('#goHelp').onclick = () => { send({ t: 'sos:go', id: s.id }); $('#modalRoot').innerHTML = ''; toast(`${esc(s.from.name)} foi avisado que você está a caminho`); if (s.lat || s.lng) openMapsWithHelp(gmapsLink(s)); };
   $('#noHelp').onclick = () => $('#modalRoot').innerHTML = '';
 }
 
@@ -1026,6 +1031,7 @@ function hideAllViews() { ['home', 'plan', 'mapa', 'viagem', 'sos', 'moto', 'con
 async function planStatus() { try { return await fetch(`/api/plan/status?user=${encodeURIComponent(ME.id)}&code=${encodeURIComponent(ME.premiumCode || '')}`).then(r => r.json()); } catch (e) { return null; } }
 
 async function showPlanner() {
+  pushNav(UI.plan ? 'planres' : 'plan');
   hideAllViews(); $('#v-plan').hidden = false; $('#tripTitle').textContent = 'Viagem automática'; $('#tripSub').textContent = 'O MotoBando monta tudo para você';
   if (UI.plan) return renderPlanResult();
   const st = await planStatus();
@@ -1114,6 +1120,7 @@ function borderHTML(b) {
 }
 function fmtDateBR(d) { const x = new Date(d + 'T12:00:00'); return x.toLocaleDateString('pt-BR'); }
 function renderPlanResult() {
+  pushNav('planres');
   const P = UI.plan; const T = UI.planTier;
   $('#tripTitle').textContent = `${P.origin.name} → ${P.dest.name}`; $('#tripSub').textContent = `${f0(P.total_km)} km · ${P.days.length} dia${P.days.length > 1 ? 's' : ''}`;
   const stopRow = (s, di, si) => `<li class="tl"><div class="time num">${s.time || ''}</div><div class="rail"><span class="dot">${ic(STOP_ICON[s.type] || 'pin')}</span></div><div class="body"><b>${esc(s.name)}</b><span>${STOP_NAME[s.type] || ''} · km ${f0(s.km)}${s.off > 1 ? ' · ' + f1(s.off) + ' km fora da rota' : ''}${s.note ? ' · ' + esc(s.note) : ''}</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">${stars(s)}${priceTag(s)}${s.warn ? '<span class="pill red">sem posto confirmado</span>' : ''}</div></div><button class="btn small" type="button" data-swap="${di}:${si}">Trocar</button></li>`;
@@ -1165,6 +1172,7 @@ function savePlan() {
   UI.afterCreate = true; UI.plan = null; toast('Viagem salva na sua pasta. Se for em grupo, ligue a chave e mande o convite.', 6000);
 }
 function showBorders() {
+  pushNav('borders');
   hideAllViews(); $('#v-plan').hidden = false; $('#tripTitle').textContent = 'Guia de fronteiras'; $('#tripSub').textContent = 'Checado em ' + fmtDateBR(FRONTEIRAS.verificado);
   $('#v-plan').innerHTML = `<div class="pad"><button class="btn btn-wide" type="button" id="bdBack">${ic('list')}Voltar</button>
    <div class="card"><div class="eyebrow">${esc(FRONTEIRAS.geral.titulo)}</div><ul class="tips">${FRONTEIRAS.geral.itens.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
@@ -1173,9 +1181,164 @@ function showBorders() {
   $('#bdBack').onclick = () => UI.plan ? renderPlanResult() : showHome();
 }
 
+/* ================= BOTÃO VOLTAR DO CELULAR ================= */
+// cada tela entra no histórico; voltar fecha a janela aberta ou volta para a tela anterior
+let NAV = null, navFromPop = false;
+function pushNav(id) {
+  if (navFromPop || NAV === id) { NAV = id; return; }
+  if (NAV === null) history.replaceState({ mb: id }, ''); else history.pushState({ mb: id }, '');
+  NAV = id;
+}
+function anyOverlay() {
+  if ($('#bigRoot').innerHTML) { closeBig(); return true; }
+  if ($('#modalRoot').innerHTML) { $('#modalRoot').innerHTML = ''; return true; }
+  if (UI.road) { UI.road = false; renderRoad(); return true; }
+  if (UI.near) { UI.near = false; renderNear(); if (L_poi) L_poi.clearLayers(); return true; }
+  if (UI.poi) { UI.poi = null; renderPoiCard(); return true; }
+  if (UI.picking) { UI.picking = false; $('#map').classList.remove('picking'); updateMapOverlays(); return true; }
+  return false;
+}
+// janelas abertas (avisos, folhas, modo estrada) também viram um passo do histórico
+let ignorePop = false, closingFromPop = false;
+const overlayOpen = () => !!($('#bigRoot').innerHTML || $('#modalRoot').innerHTML || $('#roadRoot').innerHTML || ($('#near') && !$('#near').hidden) || ($('#poiCard') && !$('#poiCard').hidden));
+function watchOverlays() {
+  let was = false;
+  const check = () => {
+    const now = overlayOpen();
+    if (now && !was && !(history.state && history.state.ov)) history.pushState({ mb: NAV, ov: true }, '');
+    if (!now && was && !closingFromPop && history.state && history.state.ov) { ignorePop = true; history.back(); }
+    was = now;
+  };
+  const mo = new MutationObserver(() => setTimeout(check, 0));
+  ['#bigRoot', '#modalRoot', '#roadRoot'].forEach(sel => mo.observe($(sel), { childList: true }));
+  ['#near', '#poiCard'].forEach(sel => mo.observe($(sel), { attributes: true, attributeFilter: ['hidden'] }));
+}
+window.addEventListener('popstate', e => {
+  if (ignorePop) { ignorePop = false; return; }
+  if (overlayOpen()) { closingFromPop = true; try { while (overlayOpen() && anyOverlay()); } finally { setTimeout(() => closingFromPop = false, 0); } return; }
+  const id = (e.state && e.state.mb) || 'home';
+  if (id === NAV) return;
+  navFromPop = true;
+  try {
+    if (id.startsWith('trip:') && ROOM) { if ($('#tabs').hidden) enterRoom(); go(id.slice(5)); }
+    else if (id === 'plan') { UI.plan = null; showPlanner(); }
+    else if (id === 'planres' && UI.plan) renderPlanResult();
+    else if (id === 'borders') showBorders();
+    else { if (ROOM) goHome(); else showHome(); }
+  } finally { navFromPop = false; NAV = id; }
+});
+
+/* ================= GOOGLE MAPS COM VOZ: explicar e trazer de volta ================= */
+// Ao sair para o Google Maps, o MotoBando fica em segundo plano e o bando para de ver você.
+// A voz do Google continua mesmo com o MotoBando na frente: por isso ensinamos a voltar.
+let leftForMaps = 0;
+function openMapsWithHelp(url) {
+  const go = () => { leftForMaps = Date.now(); store.set('mb-lastMaps', leftForMaps); window.open(url, '_blank', 'noopener'); };
+  if (store.get('mb-skipMapsHelp', false)) return go();
+  const ios = isIOS();
+  $('#modalRoot').innerHTML = `<div class="overlay"><div class="modal" role="dialog" aria-label="Usar a voz do Google Maps">
+   <div class="sec-h"><h2>Voz do Google Maps</h2><button class="iconbtn" type="button" id="gmX" aria-label="Fechar">${ic('x')}</button></div>
+   <div class="banner amber" style="box-shadow:none">${ic('users')}<div><b>Importante:</b> enquanto o Google Maps estiver na tela, o bando não vê sua posição. Depois de iniciar a rota, <b>volte para o MotoBando</b>. A voz do Google continua falando.</div></div>
+   <ol class="steps">
+    <li><span class="step-n">1</span><div><b>No Google Maps, toque em “Iniciar”</b><br>A voz começa a falar as curvas.</div></li>
+    <li><span class="step-n">2</span><div><b>Volte para o MotoBando</b><br>${ios ? 'Toque em <b>“◀ MotoBando”</b> ou <b>“◀ Safari”</b> no canto de cima, à esquerda. Ou deslize o dedo de baixo para cima, segure, e escolha o MotoBando.' : 'Toque no botão de <b>apps abertos</b> (o quadradinho ▢ ou as três barrinhas ⦀ embaixo da tela) e escolha o <b>MotoBando</b>. Ou deslize de baixo para cima e segure.'}</div></li>
+    <li><span class="step-n">3</span><div><b>Pronto</b><br>O Google segue falando a rota, e o bando volta a ver você no mapa.</div></li>
+   </ol>
+   <label class="check" style="border:0"><input type="checkbox" id="gmSkip"><span>Já sei, não mostrar mais</span></label>
+   <button class="btn primary btn-wide" type="button" id="gmGo">${ic('route')}Abrir o Google Maps</button></div></div>`;
+  $('#gmX').onclick = () => $('#modalRoot').innerHTML = '';
+  $('#gmGo').onclick = () => { if ($('#gmSkip').checked) store.set('mb-skipMapsHelp', true); $('#modalRoot').innerHTML = ''; go(); };
+}
+// qualquer link do Google Maps no app passa pela explicação
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href*="google.com/maps"]');
+  if (!a) return;
+  e.preventDefault(); openMapsWithHelp(a.href);
+}, true);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !leftForMaps || Date.now() - leftForMaps < 2500) return;
+  leftForMaps = 0;
+  if (myPos) sendPos();
+  if (ROOM) { startGPS(); keepAwake(true); }
+  $('#bigRoot').innerHTML = '';
+  const el = document.createElement('div'); el.className = 'welcome-back'; el.setAttribute('role', 'status');
+  el.innerHTML = `${ic('check')}<div><b>Você voltou!</b><span>A voz do Google Maps continua falando a rota. ${ROOM && !isSolo() ? 'O bando já está vendo você de novo.' : ''}</span></div>`;
+  document.getElementById('app').appendChild(el);
+  vibrate(150);
+  setTimeout(() => el.remove(), 6000);
+  el.onclick = () => el.remove();
+});
+
+/* ================= INSTALAR O APP NA TELA DO CELULAR ================= */
+let installEvt = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (!$('#v-home').hidden) showHome(); });
+window.addEventListener('appinstalled', () => { installEvt = null; toast('MotoBando instalado! Procure o ícone na tela do celular.', 6000); if (!$('#v-home').hidden) showHome(); });
+function installHTML() {
+  if (isStandalone()) return '';
+  return `<button type="button" class="install-btn" id="installBtn">${ic('plus')}<span><b>Instalar o MotoBando no celular</b><small>Fica com ícone na tela, igual a um aplicativo. Leva 10 segundos.</small></span></button>`;
+}
+async function doInstall() {
+  if (installEvt) { installEvt.prompt(); const r = await installEvt.userChoice.catch(() => null); if (r && r.outcome === 'accepted') toast('Instalando…'); installEvt = null; return; }
+  const ios = isIOS();
+  $('#modalRoot').innerHTML = `<div class="overlay" id="insOv"><div class="modal" role="dialog" aria-label="Instalar o MotoBando">
+   <div class="sec-h"><h2>Instalar no celular</h2><button class="iconbtn" type="button" id="insX" aria-label="Fechar">${ic('x')}</button></div>
+   ${ios ? `<ol class="steps"><li><span class="step-n">1</span><div><b>Toque no botão Compartilhar</b><br>É o quadrado com uma seta para cima, embaixo da tela (no Safari). <span class="share-ico">${ic('share')}</span></div></li>
+     <li><span class="step-n">2</span><div><b>Role e toque em “Adicionar à Tela de Início”</b><br>Tem um ícone de quadrado com um “+”.</div></li>
+     <li><span class="step-n">3</span><div><b>Toque em “Adicionar”</b>, no canto de cima.<br>Pronto: o ícone do MotoBando aparece junto dos seus aplicativos.</div></li></ol>
+     <p class="note">Precisa estar no <b>Safari</b>. Se abriu o link pelo WhatsApp, toque nos três pontinhos e escolha “Abrir no Safari”.</p>`
+   : `<ol class="steps"><li><span class="step-n">1</span><div><b>Toque nos três pontinhos ⋮</b><br>No canto de cima, à direita, do Chrome.</div></li>
+     <li><span class="step-n">2</span><div><b>Toque em “Instalar app”</b> ou “Adicionar à tela inicial”.</div></li>
+     <li><span class="step-n">3</span><div><b>Confirme em “Instalar”.</b><br>Pronto: o ícone do MotoBando aparece junto dos seus aplicativos.</div></li></ol>
+     <p class="note">Se abriu o link pelo WhatsApp, toque nos três pontinhos e escolha “Abrir no Chrome” primeiro.</p>`}
+   <button class="btn primary btn-wide" type="button" id="insOk">Entendi</button></div></div>`;
+  $('#insX').onclick = $('#insOk').onclick = () => $('#modalRoot').innerHTML = '';
+}
+
+/* ================= PUXAR PARA BAIXO PARA ATUALIZAR ================= */
+async function softRefresh() {
+  toast('Atualizando…', 2500);
+  try { if (gpsWatch !== null && navigator.geolocation) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; } } catch (e) {}
+  if (SIM.on) { /* simulação continua */ } else if (ROOM) startGPS();
+  if (!UI.wsOk || !ws || ws.readyState !== 1) { wsRetry = 0; try { ws && ws.close(); } catch (e) {} connect(); }
+  else sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: (MOTOS[ME.moto.model] || {}).n, color: ME.color }, code: CODE, sosCfg: ME.sosCfg });
+  if (ROOM && CODE) send({ t: 'join', code: CODE, member: memberPayload(), snap: TRIPS[CODE] && TRIPS[CODE].snap });
+  if (myPos) setTimeout(sendPos, 800);
+  if (map) setTimeout(() => { map.invalidateSize(); drawRoute(); drawMembers(); updateMapOverlays(); }, 600);
+  setTimeout(() => { if (!ROOM && !$('#v-home').hidden) showHome(); toast(UI.wsOk ? 'Tudo atualizado' : 'Sem conexão agora. Tentando de novo…', 2500); }, 1500);
+}
+(function pullToRefresh() {
+  const ind = document.createElement('div'); ind.className = 'ptr'; ind.innerHTML = `${ic('refresh')}<span>Puxe para atualizar</span>`; document.getElementById('app').appendChild(ind);
+  let startY = null, dy = 0, view = null;
+  const views = () => [...document.querySelectorAll('.view')].filter(v => !v.hidden && !v.classList.contains('map-view'));
+  document.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1 || $('#modalRoot').innerHTML || UI.road) return;
+    view = views().find(v => v.contains(e.target)); if (!view || view.scrollTop > 0) { startY = null; return; }
+    startY = e.touches[0].clientY; dy = 0;
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (startY === null || !view) return;
+    dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || view.scrollTop > 0) { ind.style.transform = ''; ind.classList.remove('on', 'ready'); return; }
+    const pull = Math.min(110, dy * 0.5);
+    ind.classList.add('on'); ind.classList.toggle('ready', pull > 70);
+    ind.querySelector('span').textContent = pull > 70 ? 'Solte para atualizar' : 'Puxe para atualizar';
+    ind.style.transform = `translate(-50%, ${pull}px)`;
+  }, { passive: true });
+  document.addEventListener('touchend', () => {
+    if (startY === null) return;
+    const go = ind.classList.contains('ready');
+    ind.style.transform = ''; ind.classList.remove('on', 'ready'); startY = null;
+    if (go) softRefresh();
+  });
+})();
+
 /* ================= INÍCIO ================= */
+watchOverlays();
 $('#openPremium').onclick = openPremium;
-document.querySelector('.logo').onclick = () => { if (ROOM) goHome(); };
+document.querySelector('.logo').onclick = () => { closeAllOverlays(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } };
+function closeAllOverlays() { $('#modalRoot').innerHTML = ''; if (UI.road) { UI.road = false; renderRoad(); } if (UI.near) { UI.near = false; renderNear(); } }
 document.querySelector('.logo').style.cursor = 'pointer';
 $('#openPremium').innerHTML = ic('crown') + 'Bando+';
 setNet();
