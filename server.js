@@ -117,6 +117,43 @@ app.get('/api/near', async (req, res) => {
   catch (e) { res.status(502).json({ error: 'buscador ocupado' }); }
 });
 
+// viagens de que a pessoa participa (para preencher a pasta "Minhas viagens" em qualquer aparelho)
+// recuperar pelo código pessoal: devolve o nome usado nas viagens (para confirmar que é a pessoa)
+app.get('/api/quem-sou', (req, res) => {
+  const uid = String(req.query.user || '').slice(0, 40); let name = '', n = 0;
+  for (const r of rooms.values()) { const m = r.members[uid]; if (m) { name = name || m.name; n++; } }
+  res.json({ name, trips: n });
+});
+app.get('/api/minhas-viagens', (req, res) => {
+  const uid = String(req.query.user || '').slice(0, 40); if (!uid) return res.json([]);
+  const out = [];
+  for (const r of rooms.values()) {
+    const m = r.members[uid]; if (!m) continue;
+    out.push({ code: r.code, name: r.trip.name, date: r.trip.date, startTime: r.trip.startTime, mode: r.trip.mode, status: r.trip.status || 'planejada', role: m.role, guide: r.trip.guideId === uid, stops: r.trip.stops.length, dist: r.trip.route ? r.trip.route.dist_km : null, members: Object.keys(r.members).length });
+  }
+  res.json(out);
+});
+
+/* contato comercial: guarda as mensagens; o dono lê em /api/contatos?key=ADMIN_KEY */
+const CONTATO_FILE = path.join(DATA_DIR, 'contatos.json');
+const lastContato = new Map();
+app.post('/api/contato', (req, res) => {
+  const b = req.body || {}; const ip = req.headers['x-forwarded-for'] || req.ip;
+  if (Date.now() - (lastContato.get(ip) || 0) < 30000) return res.status(429).json({ ok: false, msg: 'Aguarde um pouco para mandar outra mensagem.' });
+  const c = { ts: new Date().toISOString(), nome: clip(b.nome, 60), empresa: clip(b.empresa, 80), contato: clip(b.contato, 80), assunto: clip(b.assunto, 30), msg: clip(b.msg, 1500), user: clip(b.user, 40) };
+  if (!c.nome || !c.contato || !c.msg) return res.status(400).json({ ok: false, msg: 'Preencha nome, contato e mensagem.' });
+  lastContato.set(ip, Date.now());
+  let all = []; try { all = JSON.parse(fs.readFileSync(CONTATO_FILE, 'utf8')); } catch (e) {}
+  all.push(c); try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(CONTATO_FILE, JSON.stringify(all.slice(-1000))); } catch (e) {}
+  console.log('[contato]', c.assunto, c.nome, c.contato);
+  res.json({ ok: true });
+});
+app.get('/api/contatos', (req, res) => {
+  if (!process.env.ADMIN_KEY || req.query.key !== process.env.ADMIN_KEY) return res.status(403).json({ ok: false });
+  let all = []; try { all = JSON.parse(fs.readFileSync(CONTATO_FILE, 'utf8')); } catch (e) {}
+  res.json(all.reverse());
+});
+
 // Qualquer /r/CODIGO abre o app (ele lê o código da URL)
 app.get(['/r/:code', '/r/:code/*'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
@@ -159,6 +196,8 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const clip = (s, n = 80) => String(s == null ? '' : s).slice(0, n);
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
 
+const SANGUE = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
+const sangueOk = v => SANGUE.includes(v) ? v : '';
 function cleanMember(m, old = {}) {
   const moto = m.moto || old.moto || {};
   return {
@@ -166,6 +205,7 @@ function cleanMember(m, old = {}) {
     name: clip(m.name || old.name || 'Motociclista', 30),
     color: /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : (old.color || '#1F7A4D'),
     role: ['guia', 'integrante', 'garupa'].includes(m.role) ? m.role : (old.role || 'integrante'),
+    sangue: m.sangue !== undefined ? sangueOk(m.sangue) : (old.sangue || ''),
     garupaOf: m.role === 'garupa' || (m.role === undefined && old.role === 'garupa') ? clip(m.garupaOf !== undefined ? m.garupaOf : old.garupaOf, 40) : '',
     moto: { model: clip(moto.model, 30), fuel: Math.max(5, Math.min(100, num(moto.fuel, 100))), bagagem: !!moto.bagagem, estilo: ['tranquilo', 'normal', 'esportivo'].includes(moto.estilo) ? moto.estilo : 'normal', real: num(moto.real, 0), markKm: num(moto.markKm, 0) },
     checks: typeof m.checks === 'object' && m.checks ? Object.fromEntries(Object.entries(m.checks).slice(0, 60).map(([k, v]) => [clip(k, 20), !!v])) : (old.checks || {}),
@@ -220,7 +260,7 @@ wss.on('connection', (ws) => {
     switch (m.t) {
       case 'hello': {
         if (!m.user || !m.user.id) return;
-        ws.user = { id: clip(m.user.id, 40), name: clip(m.user.name, 30), moto: clip(m.user.motoName, 40), color: m.user.color };
+        ws.user = { id: clip(m.user.id, 40), name: clip(m.user.name, 30), moto: clip(m.user.motoName, 40), color: m.user.color, sangue: sangueOk(m.user.sangue) };
         if (m.sosCfg) ws.sosCfg = { receive: !!m.sosCfg.receive, radius: Math.max(5, Math.min(100, num(m.sosCfg.radius, 30))) };
         if (!sockets.has(ws.user.id)) sockets.set(ws.user.id, new Set());
         sockets.get(ws.user.id).add(ws);
@@ -338,7 +378,7 @@ wss.on('connection', (ws) => {
       case 'sos': {
         if (!ws.user) return;
         const lat = num(m.lat), lng = num(m.lng);
-        const s = { id: uid(), from: { id: ws.user.id, name: ws.user.name, moto: ws.user.moto, color: ws.user.color }, type: clip(m.sosType, 20), lat, lng, ts: Date.now(), code: ws.code, responders: [], notified: new Set() };
+        const s = { id: uid(), from: { id: ws.user.id, name: ws.user.name, moto: ws.user.moto, color: ws.user.color, sangue: ws.user.sangue || '' }, type: clip(m.sosType, 20), lat, lng, ts: Date.now(), code: ws.code, responders: [], notified: new Set() };
         // quem recebe: todo mundo do grupo + qualquer usuário conectado dentro do raio que ele escolheu
         const roomIds = room ? Object.keys(room.members) : [];
         for (const set of sockets.values()) for (const c of set) {
