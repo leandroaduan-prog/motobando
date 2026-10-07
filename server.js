@@ -34,18 +34,27 @@ app.post('/api/overpass', async (req, res) => {
   if (!q || q.length > 20000 || !/^\[out:json\]/.test(q)) return res.status(400).json({ error: 'consulta inválida' });
   const hit = opCache.get(q);
   if (hit && Date.now() - hit.t < 30 * 60 * 1000) return res.json(hit.data);
-  let lastErr = 'sem resposta';
-  for (const url of OVERPASS_MIRRORS) {
-    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000);
+  // consulta todos os servidores ao mesmo tempo; fica com o primeiro que responder certo
+  const ctls = OVERPASS_MIRRORS.map(() => new AbortController());
+  const errs = [];
+  const tries = OVERPASS_MIRRORS.map((url, k) => (async () => {
+    const tm = setTimeout(() => ctls[k].abort(), 30000);
     try {
-      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'MotoBando/0.1 (app de viagem de moto)' }, signal: ctl.signal });
-      if (!r.ok) { lastErr = url + ' HTTP ' + r.status; continue; }
+      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'MotoBando/0.1 (app de viagem de moto)' }, signal: ctls[k].signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
-      opCache.set(q, { t: Date.now(), data });
-      if (opCache.size > 500) opCache.delete(opCache.keys().next().value);
-      return res.json(data);
-    } catch (e) { lastErr = url + ' ' + e.message; } finally { clearTimeout(tm); }
-  }
+      if (!data || !Array.isArray(data.elements)) throw new Error('resposta inválida');
+      return data;
+    } catch (e) { errs.push(url.split('/')[2] + ' ' + e.message); throw e; } finally { clearTimeout(tm); }
+  })());
+  try {
+    const data = await Promise.any(tries);
+    ctls.forEach(c => c.abort());
+    opCache.set(q, { t: Date.now(), data });
+    if (opCache.size > 500) opCache.delete(opCache.keys().next().value);
+    return res.json(data);
+  } catch (e) { /* todos falharam */ }
+  const lastErr = errs.join(' | ');
   console.warn('Overpass falhou:', lastErr);
   res.status(502).json({ error: 'Os servidores de mapa estão ocupados. Tente de novo em alguns segundos.' });
 });

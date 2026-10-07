@@ -393,7 +393,7 @@ async function renderNear(reload) {
   el.innerHTML = `<div class="sheet-h"><div class="sec-h"><h2 style="font-size:22px">Buscar por perto</h2><button class="iconbtn" type="button" id="nearX" aria-label="Fechar">${ic('x')}</button></div>
    <div class="seg" role="group"><button type="button" data-r="me" aria-pressed="${UI.nearRef === 'me'}">Perto de mim</button><button type="button" data-r="next" aria-pressed="${UI.nearRef === 'next'}" ${ns ? '' : 'disabled'}>Perto da próxima parada</button></div>
    <div class="chips">${cats.map(c => `<button class="chip" type="button" data-c="${c}" aria-pressed="${UI.nearCat === c}">${ic(CAT[c].icon)}${CAT[c].short || CAT[c].n}</button>`).join('')}</div></div>
-   <div class="sheet-body" id="nearBody">${!ref ? '<p class="empty">Ligue o GPS para buscar perto de você.</p>' : '<p class="empty"><span class="spinner"></span> Buscando…</p>'}</div>`;
+   <div class="sheet-body" id="nearBody">${!ref ? '<p class="empty">Ligue o GPS para buscar perto de você.</p>' : '<p class="empty"><span class="spinner"></span> Buscando no mapa… pode levar alguns segundos</p>'}</div>`;
   $('#nearX').onclick = () => { UI.near = false; L_poi.clearLayers(); renderNear(); };
   el.querySelectorAll('[data-r]').forEach(x => x.onclick = () => { UI.nearRef = x.dataset.r; renderNear(); });
   el.querySelectorAll('[data-c]').forEach(x => x.onclick = () => { UI.nearCat = x.dataset.c; renderNear(); });
