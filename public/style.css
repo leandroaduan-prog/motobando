@@ -441,3 +441,26 @@ main{isolation:isolate}
 .trip-acts{display:flex;gap:6px}
 .mode-switch{border:2px solid var(--road);background:var(--road-soft)}
 .trip-info b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.2}
+/* viagem em andamento */
+.active-trip{display:flex;align-items:center;gap:14px;width:100%;border:0;border-radius:18px;padding:16px;background:var(--road);color:var(--road-ink);min-height:84px;box-shadow:inset 0 0 0 3px var(--road),inset 0 0 0 5px rgba(255,255,255,.85);text-align:left;cursor:pointer}
+.active-trip small{display:block;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.85}
+.active-trip b{display:block;font-family:var(--f-display);font-size:24px;line-height:1.1}
+.active-trip span span,.active-trip>span>span{font-size:13px;opacity:.9}
+.active-trip .ic{width:28px;height:28px}
+.live-dot{width:14px;height:14px;border-radius:50%;background:#7CFFB0;box-shadow:0 0 0 0 rgba(124,255,176,.7);animation:live 1.6s infinite;flex:none}
+@keyframes live{70%{box-shadow:0 0 0 12px rgba(124,255,176,0)}100%{box-shadow:0 0 0 0 rgba(124,255,176,0)}}
+@media (prefers-reduced-motion:reduce){.live-dot{animation:none}}
+.start-btn{min-height:64px;font-size:18px}
+/* criador automático */
+.choice.auto{border-color:var(--amber);background:var(--amber-bg)}
+.choice.auto .ic{color:var(--amber)}
+.tier-grid{display:grid;grid-template-columns:1fr;gap:10px}
+.tier{display:flex;flex-direction:column;gap:2px;text-align:left;border:2px solid var(--line);background:var(--surface);border-radius:16px;padding:14px;min-height:64px}
+.tier b{font-size:17px}
+.tier.on{border-color:var(--road);background:var(--road-soft)}
+.tier-total{font-family:var(--f-display);font-size:30px;font-weight:800;line-height:1.1}
+.tier small{font-size:12.5px;color:var(--muted)}
+.tips{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14.5px}
+.border-card{border:2px solid var(--amber)}
+.trip-card.feita .trip-date{background:var(--surface2);color:var(--muted);box-shadow:inset 0 0 0 2px var(--line)}
+.trip-acts .btn.small{min-height:46px;padding:8px 10px}

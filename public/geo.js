@@ -72,8 +72,8 @@ const GEO = (() => {
     const coords = thin(r.geometry.coordinates.map(c => [c[1], c[0]]));
     return { coords, dist_km: Math.round(r.distance / 100) / 10, dur_min: Math.round(r.duration / 60) };
   }
-  async function search(q, near) {
-    let url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=br&accept-language=pt-BR&q=${encodeURIComponent(q)}`;
+  async function search(q, near, world) {
+    let url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6${world ? '' : '&countrycodes=br'}&accept-language=pt-BR&q=${encodeURIComponent(q)}`;
     if (near) url += `&viewbox=${near.lng - 1},${near.lat + 1},${near.lng + 1},${near.lat - 1}`;
     const j = await getJSON(url);
     return j.map(x => ({ name: x.name || x.display_name.split(',')[0], display: x.display_name.split(',').slice(0, 3).join(','), lat: +x.lat, lng: +x.lon }));

@@ -1,6 +1,6 @@
 // MotoBando — service worker: app abre sem sinal e guarda os pedaços de mapa já vistos
-const APP = 'mb-app-v4', TILES = 'mb-tiles-v1', MAX_TILES = 4000;
-const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/geo.js', '/data.js', '/vendor/leaflet.js', '/vendor/leaflet.css', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const APP = 'mb-app-v5', TILES = 'mb-tiles-v1', MAX_TILES = 4000;
+const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/geo.js', '/data.js', '/fronteiras.js', '/vendor/leaflet.js', '/vendor/leaflet.css', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(APP).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => ![APP, TILES].includes(k)).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 async function trimTiles() { const c = await caches.open(TILES); const keys = await c.keys(); if (keys.length > MAX_TILES) for (const k of keys.slice(0, keys.length - MAX_TILES)) await c.delete(k); }

@@ -29,12 +29,10 @@ app.get('/api/roteiro/:code', (req, res) => {
 // Busca de lugares (postos, pousadas, comida…) feita pelo servidor: tenta vários servidores do OpenStreetMap e guarda em cache
 const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 const opCache = new Map();
-app.post('/api/overpass', async (req, res) => {
-  const q = String((req.body && req.body.q) || '');
-  if (!q || q.length > 20000 || !/^\[out:json\]/.test(q)) return res.status(400).json({ error: 'consulta inválida' });
+// consulta todos os servidores ao mesmo tempo; fica com o primeiro que responder certo
+async function overpassQuery(q) {
   const hit = opCache.get(q);
-  if (hit && Date.now() - hit.t < 30 * 60 * 1000) return res.json(hit.data);
-  // consulta todos os servidores ao mesmo tempo; fica com o primeiro que responder certo
+  if (hit && Date.now() - hit.t < 30 * 60 * 1000) return hit.data;
   const ctls = OVERPASS_MIRRORS.map(() => new AbortController());
   const errs = [];
   const tries = OVERPASS_MIRRORS.map((url, k) => (async () => {
@@ -52,11 +50,13 @@ app.post('/api/overpass', async (req, res) => {
     ctls.forEach(c => c.abort());
     opCache.set(q, { t: Date.now(), data });
     if (opCache.size > 500) opCache.delete(opCache.keys().next().value);
-    return res.json(data);
-  } catch (e) { /* todos falharam */ }
-  const lastErr = errs.join(' | ');
-  console.warn('Overpass falhou:', lastErr);
-  res.status(502).json({ error: 'Os servidores de mapa estão ocupados. Tente de novo em alguns segundos.' });
+    return data;
+  } catch (e) { console.warn('Overpass falhou:', errs.join(' | ')); throw new Error('Os servidores de mapa estão ocupados. Tente de novo em alguns segundos.'); }
+}
+app.post('/api/overpass', async (req, res) => {
+  const q = String((req.body && req.body.q) || '');
+  if (!q || q.length > 20000 || !/^\[out:json\]/.test(q)) return res.status(400).json({ error: 'consulta inválida' });
+  try { res.json(await overpassQuery(q)); } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
 // Busca rápida por categoria no buscador do OpenStreetMap (Nominatim): 1 pedido por segundo, com cache
@@ -82,13 +82,11 @@ function nominatim(url) {
   nomChain = p.catch(() => {});
   return p;
 }
-app.get('/api/near', async (req, res) => {
-  const cat = String(req.query.cat || ''); const lat = +req.query.lat, lng = +req.query.lng;
-  const rk = Math.max(1, Math.min(30, +req.query.r || 10));
-  if (!NEAR_TAGS[cat] || !Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'pedido inválido' });
+async function nearOSM(cat, lat, lng, rk) {
+  if (!NEAR_TAGS[cat]) return [];
   const key = `${cat}:${lat.toFixed(2)}:${lng.toFixed(2)}:${rk}`;
   const hit = nearCache.get(key);
-  if (hit && Date.now() - hit.t < 60 * 60 * 1000) return res.json(hit.list);
+  if (hit && Date.now() - hit.t < 60 * 60 * 1000) return hit.list;
   const dLa = rk / 111, dLo = rk / (111 * Math.cos(lat * Math.PI / 180));
   const vb = `${(lng - dLo).toFixed(4)},${(lat + dLa).toFixed(4)},${(lng + dLo).toFixed(4)},${(lat - dLa).toFixed(4)}`;
   const list = []; const seen = new Set(); let errors = 0;
@@ -104,10 +102,19 @@ app.get('/api/near', async (req, res) => {
       }
     } catch (e) { errors++; }
   }
-  if (!list.length && errors) return res.status(502).json({ error: 'buscador ocupado' });
+  if (!list.length && errors) throw new Error('buscador ocupado');
   nearCache.set(key, { t: Date.now(), list });
   if (nearCache.size > 1000) nearCache.delete(nearCache.keys().next().value);
-  res.json(list);
+  return list;
+}
+// criador de viagens automáticas + lugares com notas do Google (quando houver GOOGLE_PLACES_KEY)
+const planner = require('./plan')(app, { nominatim, nearOSM, overpassQuery, DATA_DIR });
+app.get('/api/near', async (req, res) => {
+  const cat = String(req.query.cat || ''); const lat = +req.query.lat, lng = +req.query.lng;
+  const rk = Math.max(1, Math.min(30, +req.query.r || 10));
+  if (!NEAR_TAGS[cat] || !Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'pedido inválido' });
+  try { res.json(planner.hasGoogle() ? await planner.places(cat, lat, lng, rk) : await nearOSM(cat, lat, lng, rk)); }
+  catch (e) { res.status(502).json({ error: 'buscador ocupado' }); }
 });
 
 // Qualquer /r/CODIGO abre o app (ele lê o código da URL)
@@ -174,7 +181,8 @@ function cleanTrip(p, old) {
   if ('startTime' in p) t.startTime = /^\d\d:\d\d$/.test(p.startTime) ? p.startTime : '07:00';
   if ('mode' in p) t.mode = p.mode === 'solo' ? 'solo' : 'grupo';
   if ('gap' in p) t.gap = Math.max(1, Math.min(50, num(p.gap, 5)));
-  if (Array.isArray(p.stops)) t.stops = p.stops.slice(0, 30).map(s => ({ id: clip(s.id, 20) || uid(), name: clip(s.name, 70), lat: num(s.lat), lng: num(s.lng), type: clip(s.type, 12) || 'parada', note: clip(s.note, 80) }));
+  if ('status' in p) { t.status = ['planejada', 'andamento', 'encerrada'].includes(p.status) ? p.status : 'planejada'; if (t.status === 'andamento' && !t.startedAt) t.startedAt = Date.now(); if (t.status === 'encerrada') t.endedAt = Date.now(); }
+  if (Array.isArray(p.stops)) t.stops = p.stops.slice(0, 100).map(s => ({ id: clip(s.id, 20) || uid(), name: clip(s.name, 70), lat: num(s.lat), lng: num(s.lng), type: clip(s.type, 12) || 'parada', note: clip(s.note, 120) }));
   if (Array.isArray(p.checklist)) t.checklist = p.checklist.slice(0, 40).map(c => ({ id: clip(c.id, 20) || uid(), t: clip(c.t, 70) }));
   if ('route' in p) t.route = p.route && Array.isArray(p.route.coords) ? { coords: p.route.coords.slice(0, 6000).map(c => [Math.round(num(c[0]) * 1e5) / 1e5, Math.round(num(c[1]) * 1e5) / 1e5]), dist_km: num(p.route.dist_km), dur_min: num(p.route.dur_min) } : null;
   if (Array.isArray(p.postos)) t.postos = p.postos.slice(0, 400).map(x => ({ lat: num(x.lat), lng: num(x.lng), name: clip(x.name, 60), km: num(x.km) }));
