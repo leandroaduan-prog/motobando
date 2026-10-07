@@ -30,6 +30,7 @@ let ROOM = store.get('mb-room', null); // última cópia (funciona sem sinal)
 const UI = { tab: 'mapa', nav: false, road: false, near: false, nearRef: 'me', nearCat: 'posto', nearRes: null, poi: null, picking: false, userMovedMap: 0, notices: [], rain: null, rainKey: '', sosMine: null, sosIn: [], bigSeen: {}, big: null, fitted: false, wsOk: false };
 /* pasta "Minhas viagens": cópia local de cada viagem (o guia guarda a viagem inteira para recriar se o servidor esquecer) */
 let TRIPS = store.get('mb-trips', {});
+store.set('mb-folderOpen', false); // a pasta abre fechada quando o app é aberto
 function saveTripLocal(room) {
   if (!room || !room.members[ME.id]) return;
   const m = room.members[ME.id], guide = room.trip.guideId === ME.id;
@@ -240,7 +241,7 @@ function initMap() {
   });
   $('#zin').innerHTML = ic('plus'); $('#zout').innerHTML = ic('minus'); $('#zfit').innerHTML = ic('expand'); $('#zme').innerHTML = ic('target');
   const zr = document.createElement('button'); zr.className = 'iconbtn'; zr.type = 'button'; zr.id = 'zref'; zr.setAttribute('aria-label', 'Atualizar'); zr.innerHTML = ic('refresh'); zr.onclick = softRefresh; $('.map-ctrl').appendChild(zr);
-  $('#zin').onclick = () => map.zoomIn(); $('#zout').onclick = () => map.zoomOut();
+  $('#zin').remove(); $('#zout').remove();
   $('#zfit').onclick = () => { UI.userMovedMap = Date.now(); fitRoute(); };
   $('#zme').onclick = () => { UI.userMovedMap = 0; if (myPos) programmatic(() => map.setView([myPos.lat, myPos.lng], Math.max(map.getZoom(), 14))); else toast('Ainda sem posição de GPS'); };
 }
@@ -252,7 +253,7 @@ function fitRoute() {
   else if (myPos) programmatic(() => map.setView([myPos.lat, myPos.lng], 12));
 }
 function drawRoute() {
-  if (!map) return;
+  if (!map || !ROOM) return;
   L_route.clearLayers(); L_stops.clearLayers(); L_postos.clearLayers();
   const R = routeModel();
   if (R) {
@@ -272,7 +273,7 @@ function getCss(v) { return getComputedStyle(document.documentElement).getProper
 function poiIcon(cat) { const c = CAT[cat] || CAT.turismo; return L.divIcon({ className: '', html: `<div class="mk-poi" style="background:${c.color}">${ic(c.icon)}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }); }
 function helmIcon(m, isMe, stale) {
   const g = garupaOf(m.id);
-  return L.divIcon({ className: '', html: `<div class="mk-helm ${isMe ? 'me' : ''} ${stale ? 'stale' : ''}" style="position:relative"><i style="background:${m.color}">${ini(m.name)}</i>${g ? '<b>+1</b>' : ''}<span>${isMe ? 'Você' : esc(m.name)}</span></div>`, iconSize: [60, 62], iconAnchor: [30, 22] });
+  return L.divIcon({ className: '', html: `<div class="mk-helm ${isMe ? 'me' : ''} ${stale ? 'stale' : ''}" style="position:relative"><i style="background:${m.color}">${ini(m.name)}</i>${g ? '<b>+1</b>' : ''}<span>${isMe ? 'Você' : esc(m.name)}</span></div>`, iconSize: [56, 54], iconAnchor: [28, 18] });
 }
 function drawMembers() {
   if (!map || !ROOM) return;
@@ -337,7 +338,7 @@ function linearHTML() {
    <div class="lin-line"></div><div class="lin-fill" style="width:${left(meIt ? meIt.pos : 0)}"></div>
    <div class="lin-start">${esc(prev.name)}</div>
    <div class="lin-target">${ic('flag')}</div>
-   ${items.map(it => `<div class="helm ${it === meIt ? 'me' : ''}" style="left:${left(it.pos)};top:${it.row === 1 ? 0 : it.row === 2 ? 84 : (it === meIt ? 33 : 36)}px;${it.stale ? 'opacity:.55' : ''}"><i style="background:${it.m.color}">${ic('helmet')}</i><span>${it === meIt ? 'Você' : esc(it.m.name)}${garupaOf(it.m.id) ? ' +1' : ''}${it.behind > 0.3 ? ' · −' + f0(it.behind) + ' km' : ''}</span></div>`).join('')}
+   ${items.map(it => `<div class="helm ${it === meIt ? 'me' : ''}" style="left:${left(it.pos)};top:${it.row === 1 ? -4 : it.row === 2 ? 52 : (it === meIt ? 24 : 26)}px;${it.stale ? 'opacity:.55' : ''}"><i style="background:${it.m.color}">${ic('helmet')}</i><span>${it === meIt ? 'Você' : esc(it.m.name)}${garupaOf(it.m.id) ? ' +1' : ''}${it.behind > 0.3 ? ' · −' + f0(it.behind) + ' km' : ''}</span></div>`).join('')}
   </div>
   <div class="lin-foot"><span>${items.length > 1 && last ? `Último: <b>${esc(last.m.name)}</b>, ${f1(Math.max(0, lastGap))} km atrás de você` : (isSolo() ? 'Viagem solo' : 'Esperando o GPS do bando')}</span><span>${f0(Math.max(0, R.total - mk0))} km até o destino</span></div>
  </div>`;
@@ -379,14 +380,15 @@ function updateMapOverlays() {
 function renderMapActions() {
   const el = $('#mapActions');
   const html = `<button class="road-btn nav-btn" id="aNav" type="button">${UI.nav ? ic('x') + 'Sair' : ic('target') + 'Navegar'}</button>
-   ${UI.nav ? `<a class="gmaps" id="aG" href="${gmapsLink()}" target="_blank" rel="noopener">${ic('route')}Voz no Google Maps</a>` : `<button class="near-btn" id="aNear" type="button">${ic('search')}Buscar por perto</button>`}
-   <button class="road-btn" id="aRoad" type="button" aria-label="Modo estrada">${ic('helmet')}${UI.nav ? '' : 'Modo estrada'}</button>`;
+   ${UI.nav ? `<a class="gmaps gmaps-hl" id="aG" href="${gmapsLink()}" target="_blank" rel="noopener">${ic('route')}<span><b>Voz no Google Maps</b><small>depois, volte p/ o app</small></span></a>` : `<button class="near-btn" id="aNear" type="button">${ic('search')}Buscar por perto</button>`}
+   <button class="road-btn road-red" id="aRoad" type="button" aria-label="Modo estrada: botões grandes">${ic('helmet')}${UI.nav ? '' : 'Modo estrada'}</button>`;
   if (el._h !== html) { el.innerHTML = html; el._h = html;
-    $('#aNav').onclick = () => { UI.nav = !UI.nav; UI.userMovedMap = 0; keepAwake(UI.nav); if (UI.nav) followMe(); else fitRoute(); updateMapOverlays(); };
+    $('#aNav').onclick = () => { if (UI.nav) return exitNav(); UI.nav = true; UI.userMovedMap = 0; keepAwake(true); followMe(); updateMapOverlays(); };
     const n = $('#aNear'); if (n) n.onclick = () => { UI.near = true; UI.poi = null; renderPoiCard(); renderNear(); };
     $('#aRoad').onclick = () => { UI.road = true; keepAwake(true); renderRoad(); };
   } else { const g = $('#aG'); if (g) g.href = gmapsLink(); }
 }
+function exitNav() { UI.nav = false; fitRoute(); updateMapOverlays(); toast('Saiu da navegação', 1500); }
 function gmapsLink(dest) {
   if (dest) return `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}&travelmode=driving`;
   const mk0 = myKm() || 0;
@@ -505,7 +507,8 @@ function showHome() {
    <div class="home-hero"><div class="eyebrow">MotoBando</div><h1>${needProfile ? 'Bora montar o bando?' : 'Pra onde vamos?'}</h1><p class="muted" style="margin:0">Rota, GPS do grupo, combustível, gastos e SOS na estrada.</p></div>
    ${needProfile ? `<form class="card" id="profForm" style="display:flex;flex-direction:column;gap:12px">
      <div class="field"><label for="pName">Seu nome ou apelido</label><input class="input" id="pName" maxlength="30" required autocomplete="nickname" placeholder="Ex.: Leandro"></div>
-     <div class="field"><label for="pMoto">Sua moto (se for de garupa, escolha qualquer uma)</label><select class="input" id="pMoto">${motoOpts}</select></div>
+     <div class="eyebrow" style="margin-top:4px">Sua moto <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">(se for de garupa, pode pular)</span></div>
+     ${motoPickerHTML('p', ME.moto.model)}
      <button class="btn primary btn-wide" type="submit">Continuar</button></form>` : `
    ${installHTML()}
    ${urlCode ? '' : activeTripHTML() + tripListHTML()}
@@ -525,7 +528,8 @@ function showHome() {
    <button class="btn btn-wide" type="button" id="homeBorders">${ic('book')}Guia de fronteiras</button>
    <p class="legal">Mapa © colaboradores do OpenStreetMap. Rotas: OSRM. Previsão do tempo: Open-Meteo.</p>`}
   </div>`;
-  const pf = $('#profForm'); if (pf) pf.onsubmit = e => { e.preventDefault(); ME.name = $('#pName').value.trim(); ME.moto.model = $('#pMoto').value; saveMe(); if (UI.wsOk) sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: MOTOS[ME.moto.model].n, color: ME.color }, sosCfg: ME.sosCfg }); showHome(); };
+  const pf = $('#profForm'); if (pf) pf.onsubmit = e => { e.preventDefault(); ME.name = $('#pName').value.trim(); ME.moto.model = $('#pModelo').value; saveMe(); if (UI.wsOk) sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: MOTOS[ME.moto.model].n, color: ME.color }, sosCfg: ME.sosCfg }); showHome(); };
+  bindMotoPicker('p');
   let joinRole = 'integrante';
   document.querySelectorAll('[data-jr]').forEach(b => b.onclick = () => { joinRole = b.dataset.jr; document.querySelectorAll('[data-jr]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
   const jf = $('#joinForm'); if (jf) jf.onsubmit = e => { e.preventDefault(); let c = $('#jCode').value.trim().toUpperCase().replace(/\s/g, ''); if (!c.startsWith('BANDO-')) c = 'BANDO-' + c.replace(/^BANDO/, ''); send({ t: 'join', code: c, member: memberPayload(joinRole) }); toast('Entrando…'); };
@@ -549,13 +553,18 @@ function tripListHTML() {
     return `<div class="trip-card ${t.gone ? 'gone' : ''} ${kind}"><button type="button" class="trip-open" data-open="${esc(t.code)}"><span class="trip-date">${d ? `<b>${d.getDate()}</b>${d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}` : '<b>?</b>data'}</span><span class="trip-info"><b>${esc(t.name)}</b><span>${esc(role)} · ${t.stops} parada${t.stops === 1 ? '' : 's'}${t.dist ? ' · ' + f0(t.dist) + ' km' : ''}${t.mode !== 'solo' && t.members > 1 ? ' · ' + t.members + ' pessoas' : ''}${t.gone ? ' · não existe mais' : ''}</span></span></button>
      <div class="trip-acts">${kind === 'feita' ? `<button class="btn small" type="button" data-dup="${esc(t.code)}">${ic('refresh')}Repetir</button>` : t.guide ? `<button class="iconbtn" type="button" data-dup="${esc(t.code)}" aria-label="Duplicar como modelo">${ic('copy')}</button>` : ''}<button class="iconbtn" type="button" data-rm="${esc(t.code)}" aria-label="Remover da pasta">${ic('trash')}</button></div></div>`; };
   const big = t => `<button type="button" class="active-trip" data-open="${esc(t.code)}"><span class="live-dot"></span><span style="flex:1;min-width:0;text-align:left"><small>Viagem em andamento</small><b>${esc(t.name)}</b><span>${t.mode === 'solo' ? 'Solo' : t.members + ' pessoas'} · toque para entrar</span></span>${ic('route')}</button>`;
-  return `<section style="display:flex;flex-direction:column;gap:10px"><div class="sec-h"><h2>Minhas viagens</h2><span class="pill green">${list.length}</span></div>
-   ${act.length ? `<div class="eyebrow" style="color:var(--road)">Em andamento</div>${act.map(big).join('')}` : ''}
-   <div class="eyebrow">Próximas (${next.length})</div>${next.length ? `<div class="trip-list">${next.map(t => card(t, 'proxima')).join('')}</div>` : '<p class="note" style="margin:0">Nenhuma viagem marcada. Crie uma abaixo.</p>'}
-   ${past.length ? `<details ${act.length || next.length ? '' : 'open'}><summary class="eyebrow" style="cursor:pointer;min-height:40px;display:flex;align-items:center">Realizadas (${past.length}) · toque para ver e repetir</summary><div class="trip-list" style="margin-top:8px">${past.map(t => card(t, 'feita')).join('')}</div></details>` : ''}</section>`;
+  const open = store.get('mb-folderOpen', false);
+  return `${act.length ? `<section class="home-active"><div class="eyebrow" style="color:var(--road)">Viagem em andamento</div>${act.map(big).join('')}</section>` : ''}
+   <section class="folder ${open ? 'open' : ''}">
+    <button type="button" class="folder-head" id="folderToggle" aria-expanded="${open}"><span><b>Minhas viagens</b><small>${next.length} próxima${next.length === 1 ? '' : 's'} · ${past.length} realizada${past.length === 1 ? '' : 's'}</small></span><span class="chev">${ic('chev')}</span></button>
+    <div class="folder-body" ${open ? '' : 'hidden'}>
+     <div class="eyebrow">Próximas (${next.length})</div>${next.length ? `<div class="trip-list">${next.map(t => card(t, 'proxima')).join('')}</div>` : '<p class="note" style="margin:0">Nenhuma viagem marcada. Crie uma abaixo.</p>'}
+     ${past.length ? `<details><summary class="eyebrow" style="cursor:pointer;min-height:40px;display:flex;align-items:center">Realizadas (${past.length}) · toque para ver e repetir</summary><div class="trip-list" style="margin-top:8px">${past.map(t => card(t, 'feita')).join('')}</div></details>` : ''}
+    </div></section>`;
 }
 function bindTripList() {
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openTrip(b.dataset.open));
+  const ft = $('#folderToggle'); if (ft) ft.onclick = () => { const o = !store.get('mb-folderOpen', false); store.set('mb-folderOpen', o); ft.parentElement.classList.toggle('open', o); ft.setAttribute('aria-expanded', o); ft.nextElementSibling.hidden = !o; };
   document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
     const t = TRIPS[b.dataset.rm]; if (!t) return;
     $('#modalRoot').innerHTML = `<div class="overlay center"><div class="incoming" style="border-color:var(--line)"><h2 style="margin:0;font-family:var(--f-display);font-size:26px">Remover “${esc(t.name)}”?</h2><p class="muted" style="margin:0">${t.guide && t.mode !== 'solo' && t.members > 1 ? 'Você sai do grupo e o papel de guia passa para outra pessoa.' : 'A viagem sai da sua pasta.'}</p><div class="row"><button class="btn" style="flex:1;color:var(--sos)" type="button" id="rmYes">Remover</button><button class="btn primary" style="flex:1" type="button" id="rmNo">Manter</button></div></div></div>`;
@@ -857,7 +866,8 @@ function renderMoto() {
   <section style="display:flex;flex-direction:column;gap:10px">
    <div class="sec-h"><h2>Minha moto</h2></div>
    <div class="field"><label for="meName">Meu nome no grupo</label><input class="input" id="meName" maxlength="30" value="${esc(ME.name)}"></div>
-   <div class="field"><label for="motoSel">Modelo (a ficha aparece sozinha)</label><select class="input" id="motoSel">${Object.entries(MOTOS).map(([k, v]) => `<option value="${k}" ${k === mo.model ? 'selected' : ''}>${v.n}</option>`).join('')}</select></div>
+   <p class="note" style="margin:0">Escolha a marca e depois o modelo: a ficha aparece sozinha.</p>
+   ${motoPickerHTML('m', mo.model)}
    ${mo.model === 'outra' ? `<div class="row"><div class="field"><label for="oTank">Tanque (L)</label><input class="input num" id="oTank" type="number" inputmode="decimal" step="0.1" value="${mo.tanque}"></div><div class="field"><label for="oKml">Consumo (km/L)</label><input class="input num" id="oKml" type="number" inputmode="decimal" step="0.5" value="${mo.kmlBase}"></div></div>` : `
    <div class="spec-grid">
     <div class="spec"><small>Cilindrada</small><b class="num">${f1(m.cc)}<em>cc</em></b></div>
@@ -895,7 +905,7 @@ function renderMoto() {
  </div>`;
   const rer = () => { saveMe(); syncMember(); renderMoto(); updateMapOverlays(); };
   $('#meName').onchange = e => { ME.name = e.target.value.trim() || ME.name; rer(); };
-  $('#motoSel').onchange = e => { mo.model = e.target.value; mo.real = 0; rer(); };
+  bindMotoPicker('m', id => { mo.model = id; mo.real = 0; rer(); });
   const ot = $('#oTank'); if (ot) ot.onchange = e => { mo.tanque = +e.target.value || 15; rer(); };
   const ok = $('#oKml'); if (ok) ok.onchange = e => { mo.kmlBase = +e.target.value || 25; rer(); };
   const step = d => { const F2 = myFuel(); const cur = F2 ? F2.pct : mo.fuel; mo.fuel = Math.max(5, Math.min(100, Math.round((cur + d) / 10) * 10)); mo.markKm = myKm() || 0; rer(); };
@@ -918,7 +928,7 @@ function renderContas() {
   const ms = membersArr(), b = balances(), st = settle(b), total = ROOM.expenses.reduce((a, e) => a + e.v, 0);
   const nm = id => (ROOM.members[id] || { name: 'Saiu do grupo' }).name, col = id => (ROOM.members[id] || { color: '#888' }).color;
   $('#v-contas').innerHTML = `<div class="pad">
-  <div class="banner" style="box-shadow:none;border-color:var(--line)">${ic('fuel')}<div><b>Gasolina não entra aqui.</b> Cada um paga a sua. Aqui vão só os gastos em conjunto. O garupa também divide.</div></div>
+  <div class="banner" style="box-shadow:none;border-color:var(--line)">${ic('users')}<div><b>Garupa também divide.</b> Se o garupa estiver cadastrado no grupo, ele entra na divisão dos gastos como todo mundo.</div></div>
   <section style="display:flex;flex-direction:column;gap:10px">
    <div class="sec-h"><h2>Gastos em conjunto</h2><span class="pill green num">${brl(total)}</span></div>
    <div class="card">${ROOM.expenses.map(e => `<div class="exp"><div class="avatar" style="background:${col(e.by)}">${esc(ini(nm(e.by)))}</div><div class="grow"><b>${esc(e.d)}</b><div class="sub">${esc(nm(e.by))} pagou · ${e.split.length === ms.length ? (ms.length > 1 ? 'dividido entre todos' : 'só seu') : 'entre ' + e.split.map(id => esc(nm(id))).join(', ')}</div></div><div class="val num">${brl(e.v)}</div><button class="del iconbtn" style="border:0;background:none" type="button" data-dx="${e.id}" aria-label="Apagar gasto">${ic('trash')}</button></div>`).join('') || '<p class="empty">Nenhum gasto ainda.</p>'}</div>
@@ -1186,7 +1196,9 @@ function showBorders() {
 let NAV = null, navFromPop = false;
 function pushNav(id) {
   if (navFromPop || NAV === id) { NAV = id; return; }
-  if (NAV === null) history.replaceState({ mb: id }, ''); else history.pushState({ mb: id }, '');
+  // trocar de aba dentro da viagem não empilha: o voltar sai direto para o Início
+  const tabToTab = NAV && NAV.startsWith('trip:') && id.startsWith('trip:') && !(history.state && history.state.ov);
+  if (NAV === null || tabToTab) history.replaceState({ mb: id }, ''); else history.pushState({ mb: id }, '');
   NAV = id;
 }
 function anyOverlay() {
@@ -1196,11 +1208,12 @@ function anyOverlay() {
   if (UI.near) { UI.near = false; renderNear(); if (L_poi) L_poi.clearLayers(); return true; }
   if (UI.poi) { UI.poi = null; renderPoiCard(); return true; }
   if (UI.picking) { UI.picking = false; $('#map').classList.remove('picking'); updateMapOverlays(); return true; }
+  if (UI.nav && UI.tab === 'mapa') { exitNav(); return true; }
   return false;
 }
 // janelas abertas (avisos, folhas, modo estrada) também viram um passo do histórico
 let ignorePop = false, closingFromPop = false;
-const overlayOpen = () => !!($('#bigRoot').innerHTML || $('#modalRoot').innerHTML || $('#roadRoot').innerHTML || ($('#near') && !$('#near').hidden) || ($('#poiCard') && !$('#poiCard').hidden));
+const overlayOpen = () => !!($('#bigRoot').innerHTML || $('#modalRoot').innerHTML || $('#roadRoot').innerHTML || ($('#near') && !$('#near').hidden) || ($('#poiCard') && !$('#poiCard').hidden) || (UI.nav && UI.tab === 'mapa' && !$('#v-mapa').hidden));
 function watchOverlays() {
   let was = false;
   const check = () => {
@@ -1211,7 +1224,7 @@ function watchOverlays() {
   };
   const mo = new MutationObserver(() => setTimeout(check, 0));
   ['#bigRoot', '#modalRoot', '#roadRoot'].forEach(sel => mo.observe($(sel), { childList: true }));
-  ['#near', '#poiCard'].forEach(sel => mo.observe($(sel), { attributes: true, attributeFilter: ['hidden'] }));
+  ['#near', '#poiCard', '#linear', '#v-mapa'].forEach(sel => mo.observe($(sel), { attributes: true, attributeFilter: ['hidden'] }));
 }
 window.addEventListener('popstate', e => {
   if (ignorePop) { ignorePop = false; return; }
@@ -1305,33 +1318,62 @@ async function softRefresh() {
   else sendNow({ t: 'hello', user: { id: ME.id, name: ME.name, motoName: (MOTOS[ME.moto.model] || {}).n, color: ME.color }, code: CODE, sosCfg: ME.sosCfg });
   if (ROOM && CODE) send({ t: 'join', code: CODE, member: memberPayload(), snap: TRIPS[CODE] && TRIPS[CODE].snap });
   if (myPos) setTimeout(sendPos, 800);
-  if (map) setTimeout(() => { map.invalidateSize(); drawRoute(); drawMembers(); updateMapOverlays(); }, 600);
+  if (map) setTimeout(() => { if (!ROOM) return; map.invalidateSize(); drawRoute(); drawMembers(); updateMapOverlays(); }, 600);
   setTimeout(() => { if (!ROOM && !$('#v-home').hidden) showHome(); toast(UI.wsOk ? 'Tudo atualizado' : 'Sem conexão agora. Tentando de novo…', 2500); }, 1500);
 }
-(function pullToRefresh() {
+(function gestures() {
   const ind = document.createElement('div'); ind.className = 'ptr'; ind.innerHTML = `${ic('refresh')}<span>Puxe para atualizar</span>`; document.getElementById('app').appendChild(ind);
-  let startY = null, dy = 0, view = null;
-  const views = () => [...document.querySelectorAll('.view')].filter(v => !v.hidden && !v.classList.contains('map-view'));
+  const edge = document.createElement('div'); edge.className = 'swipe-hint'; edge.innerHTML = ic('up'); document.getElementById('app').appendChild(edge);
+  let st = null;
+  const visibleView = () => [...document.querySelectorAll('.view')].find(v => !v.hidden);
+  const blocked = t => t.closest('input,select,textarea,.chips,.seg,.leaflet-control,.modal,.road,.big-alert,.sheet,.map-actions');
   document.addEventListener('touchstart', e => {
-    if (e.touches.length !== 1 || $('#modalRoot').innerHTML || UI.road) return;
-    view = views().find(v => v.contains(e.target)); if (!view || view.scrollTop > 0) { startY = null; return; }
-    startY = e.touches[0].clientY; dy = 0;
+    if (e.touches.length !== 1 || $('#modalRoot').innerHTML || $('#bigRoot').innerHTML) { st = null; return; }
+    const t = e.touches[0], target = e.target, view = visibleView();
+    const inHeader = !!target.closest('#top'), onMap = !!target.closest('#map');
+    // puxar para baixo: em qualquer tela pelo topo; nas telas com rolagem, quando já estão no topo
+    const canPull = !UI.road && (inHeader || (view && !view.classList.contains('map-view') && view.contains(target) && view.scrollTop <= 0));
+    // deslizar para os lados: fora do mapa; no mapa, só começando na borda esquerda
+    const fromEdge = t.clientX < 28;
+    const canSwipe = !UI.road && !blocked(target) && (!onMap || fromEdge);
+    st = { x: t.clientX, y: t.clientY, t: Date.now(), canPull, canSwipe, fromEdge, mode: null };
   }, { passive: true });
   document.addEventListener('touchmove', e => {
-    if (startY === null || !view) return;
-    dy = e.touches[0].clientY - startY;
-    if (dy <= 0 || view.scrollTop > 0) { ind.style.transform = ''; ind.classList.remove('on', 'ready'); return; }
-    const pull = Math.min(110, dy * 0.5);
-    ind.classList.add('on'); ind.classList.toggle('ready', pull > 70);
-    ind.querySelector('span').textContent = pull > 70 ? 'Solte para atualizar' : 'Puxe para atualizar';
-    ind.style.transform = `translate(-50%, ${pull}px)`;
+    if (!st) return;
+    const t = e.touches[0], dx = t.clientX - st.x, dy = t.clientY - st.y;
+    if (!st.mode) { if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.3) st.mode = 'v'; else if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.3) st.mode = 'h'; }
+    if (st.mode === 'v' && st.canPull && dy > 0) {
+      const pull = Math.min(110, dy * 0.5);
+      ind.classList.add('on'); ind.classList.toggle('ready', pull > 70);
+      ind.querySelector('span').textContent = pull > 70 ? 'Solte para atualizar' : 'Puxe para atualizar';
+      ind.style.transform = `translate(-50%, ${pull}px)`;
+    } else if (st.mode === 'h' && st.canSwipe && dx > 0 && st.fromEdge) {
+      edge.classList.add('on'); edge.style.transform = `translate(${Math.min(60, dx * 0.4)}px, -50%) rotate(-90deg)`;
+    }
   }, { passive: true });
-  document.addEventListener('touchend', () => {
-    if (startY === null) return;
-    const go = ind.classList.contains('ready');
-    ind.style.transform = ''; ind.classList.remove('on', 'ready'); startY = null;
-    if (go) softRefresh();
+  document.addEventListener('touchend', e => {
+    if (!st) return;
+    const ready = ind.classList.contains('ready');
+    ind.style.transform = ''; ind.classList.remove('on', 'ready'); edge.classList.remove('on'); edge.style.transform = '';
+    const t = e.changedTouches[0], dx = t.clientX - st.x, dy = t.clientY - st.y, fast = Date.now() - st.t < 700;
+    const s0 = st; st = null;
+    if (s0.mode === 'v' && ready && s0.canPull) return softRefresh();
+    if (s0.mode !== 'h' || !s0.canSwipe || Math.abs(dx) < 70 || Math.abs(dy) > 60 || !fast) return;
+    swipe(dx > 0 ? 'right' : 'left', s0.fromEdge);
   });
+  function swipe(dir, fromEdge) {
+    // navegação aberta: deslizar para a direita sai dela
+    if (UI.tab === 'mapa' && !$('#v-mapa').hidden) { if (dir === 'right') { if (UI.nav) exitNav(); else history.back(); } return; }
+    // dentro da viagem: troca de aba (Mapa, Viagem, SOS, Moto, Contas)
+    if (!$('#tabs').hidden) {
+      const order = TABS.map(t => t[0]); const i = order.indexOf(UI.tab);
+      const j = dir === 'left' ? i + 1 : i - 1;
+      if (j >= 0 && j < order.length) go(order[j]); else if (dir === 'right') history.back();
+      return;
+    }
+    // demais telas: deslizar para a direita volta
+    if (dir === 'right' && $('#v-home').hidden) history.back();
+  }
 })();
 
 /* ================= INÍCIO ================= */

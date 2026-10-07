@@ -37,58 +37,48 @@ const I={
 };
 I.up='<path d="M12 19V5M6 11l6-6 6 6"/>';I.down='<path d="M12 5v14M6 13l6 6 6-6"/>';I.gps='<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/>';
 I.logout='<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>';I.share='<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>';
-I.refresh='<path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/>';
+I.chev='<path d="M6 9l6 6 6-6"/>';I.refresh='<path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/>';
 const ic=(n,c='')=>`<svg class="ic ${c}" viewBox="0 0 24 24" aria-hidden="true">${I[n]||''}</svg>`;
 
-/* Ficha das motos — dados de fábrica aproximados (cilindrada cc, potência cv, tanque L, consumo médio km/L) */
-const MOTOS={
- cg160:{n:'Honda CG 160 Titan',cc:162.7,cv:15.1,tanque:14,kml:38},
- fan160:{n:'Honda CG 160 Fan',cc:162.7,cv:15.1,tanque:14,kml:40},
- bros160:{n:'Honda NXR 160 Bros',cc:162.7,cv:14.7,tanque:12,kml:35},
- factor150:{n:'Yamaha Factor 150',cc:149,cv:12.4,tanque:15.2,kml:40},
- fazer150:{n:'Yamaha Fazer FZ15',cc:149,cv:12.4,tanque:14,kml:38},
- crosser150:{n:'Yamaha Crosser 150',cc:149,cv:12.4,tanque:12,kml:36},
- lander250:{n:'Yamaha Lander 250',cc:249,cv:20.7,tanque:13.6,kml:28},
- fz25:{n:'Yamaha Fazer FZ25',cc:249,cv:21.3,tanque:14,kml:30},
- cb300:{n:'Honda CB 300F Twister',cc:293,cv:24.7,tanque:14.1,kml:30},
- xre190:{n:'Honda XRE 190',cc:184,cv:16.4,tanque:12,kml:33},
- xre300:{n:'Honda XRE 300 Sahara',cc:293,cv:25.4,tanque:13.8,kml:27},
- mt03:{n:'Yamaha MT-03',cc:321,cv:42,tanque:14,kml:24},
- ninja400:{n:'Kawasaki Ninja 400',cc:399,cv:45,tanque:14,kml:23},
- g310gs:{n:'BMW G 310 GS',cc:313,cv:34,tanque:11,kml:28},
- him411:{n:'Royal Enfield Himalayan 411',cc:411,cv:24.3,tanque:15,kml:27},
- him450:{n:'Royal Enfield Himalayan 450',cc:452,cv:40,tanque:17,kml:27},
- meteor350:{n:'Royal Enfield Meteor 350',cc:349,cv:20.2,tanque:15,kml:30},
- classic350:{n:'Royal Enfield Classic 350',cc:349,cv:20.2,tanque:13,kml:30},
- nx500:{n:'Honda NX500 (ex-CB 500X)',cc:471,cv:50,tanque:17.5,kml:25},
- cb500f:{n:'Honda CB 500F / Hornet 500',cc:471,cv:50,tanque:17.1,kml:25},
- cb650r:{n:'Honda CB 650R',cc:649,cv:95,tanque:15.4,kml:19},
- versys650:{n:'Kawasaki Versys 650',cc:649,cv:66,tanque:21,kml:21},
- z650:{n:'Kawasaki Z650',cc:649,cv:68,tanque:15,kml:21},
- mt07:{n:'Yamaha MT-07',cc:689,cv:74,tanque:14,kml:21},
- tenere700:{n:'Yamaha Ténéré 700',cc:689,cv:73,tanque:16,kml:22},
- tracer9:{n:'Yamaha Tracer 9 GT',cc:890,cv:119,tanque:18,kml:18},
- transalp:{n:'Honda XL750 Transalp',cc:755,cv:92,tanque:16.9,kml:21},
- africatwin:{n:'Honda CRF1100L Africa Twin',cc:1084,cv:102,tanque:18.8,kml:17},
- f850gs:{n:'BMW F 850 GS / F 900 GS',cc:895,cv:105,tanque:15,kml:19},
- gs1250:{n:'BMW R 1250 GS',cc:1254,cv:136,tanque:20,kml:18},
- gs1300:{n:'BMW R 1300 GS',cc:1300,cv:145,tanque:19,kml:18},
- tiger900:{n:'Triumph Tiger 900',cc:888,cv:108,tanque:20,kml:19},
- tiger1200:{n:'Triumph Tiger 1200',cc:1160,cv:150,tanque:20,kml:16},
- street_twin:{n:'Triumph Speed Twin 900',cc:900,cv:65,tanque:12,kml:21},
- multistrada:{n:'Ducati Multistrada V4',cc:1158,cv:170,tanque:22,kml:15},
- scrambler:{n:'Ducati Scrambler 800',cc:803,cv:73,tanque:13.5,kml:19},
- duke390:{n:'KTM 390 Duke / Adventure',cc:373,cv:44,tanque:14.5,kml:25},
- adv890:{n:'KTM 890 Adventure',cc:889,cv:105,tanque:20,kml:18},
- fatboy:{n:'Harley-Davidson Fat Boy 114',cc:1868,cv:94,tanque:18.9,kml:17},
- streetglide:{n:'Harley-Davidson Street Glide',cc:1923,cv:105,tanque:22.7,kml:16},
- sportster:{n:'Harley-Davidson Sportster S',cc:1252,cv:121,tanque:11.8,kml:17},
- pcx160:{n:'Honda PCX 160',cc:156.9,cv:15.8,tanque:8.1,kml:40},
- nmax160:{n:'Yamaha NMAX 160',cc:155,cv:15.1,tanque:7.1,kml:38},
- xmax250:{n:'Yamaha XMAX 250',cc:249,cv:22.8,tanque:13,kml:30},
- adv160:{n:'Honda ADV 160',cc:156.9,cv:15.8,tanque:8.1,kml:38},
- outra:{n:'Outra moto (vou informar)',cc:0,cv:0,tanque:15,kml:25}
+/* Ficha das motos por marca — dados de fábrica aproximados: [id, modelo, cilindrada cc, potência cv, tanque L, consumo médio km/L] */
+const MOTO_MARCAS = {
+ 'Honda': [['cg160','CG 160 Titan',162.7,15.1,14,38],['fan160','CG 160 Fan',162.7,15.1,14,40],['start160','CG 160 Start',162.7,14.9,14,41],['cargo160','CG 160 Cargo',162.7,14.9,14,40],['bros160','NXR 160 Bros',162.7,14.7,12,35],['biz125','Biz 125',124.9,9.2,5.1,45],['pop110','Pop 110i',109.5,8.4,4.2,50],['elite125','Elite 125',124.9,9.3,5.5,44],['pcx160','PCX 160',156.9,15.8,8.1,40],['adv160','ADV 160',156.9,15.8,8.1,38],['sh150','SH 150i',149.3,14.5,7.5,38],['xre190','XRE 190',184.4,16.4,12,33],['cb300','CB 300F Twister',293,24.7,14.1,30],['xre300','XRE 300 Sahara',293,25.4,13.8,27],['cb500f','CB 500F / Hornet 500',471,50,17.1,25],['nx500','NX500 (ex-CB 500X)',471,50,17.5,25],['cbr500r','CBR 500R',471,50,17.1,25],['cb650r','CB 650R',649,95,15.4,19],['cbr650r','CBR 650R',649,95,15.4,19],['transalp','XL750 Transalp',755,92,16.9,21],['nc750x','NC 750X',745,58,14.1,28],['hornet750','CB 750 Hornet',755,92,15.2,21],['africatwin','CRF1100L Africa Twin',1084,102,18.8,17],['africatwinas','Africa Twin Adventure Sports',1084,102,24.8,17],['goldwing','GL1800 Gold Wing',1833,126,21.1,15]],
+ 'Yamaha': [['factor150','Factor 150',149,12.4,15.2,40],['fazer150','Fazer FZ15',149,12.4,14,38],['crosser150','Crosser 150',149,12.4,12,36],['fluo125','Fluo 125',125,8.2,5.5,45],['neo125','Neo 125',125,9.5,4.2,42],['nmax160','NMAX 160',155,15.1,7.1,38],['xmax250','XMAX 250',249,22.8,13,30],['lander250','Lander 250',249,20.7,13.6,28],['fz25','Fazer FZ25',249,21.3,14,30],['r3','YZF-R3',321,42,14,24],['mt03','MT-03',321,42,14,24],['mt07','MT-07',689,74,14,21],['tenere700','Ténéré 700',689,73,16,22],['xj6','XJ6 N / F',600,77,17.3,18],['mt09','MT-09',890,119,14,17],['tracer9','Tracer 9 GT',890,119,18,18],['superTenere','XT1200Z Super Ténéré',1199,112,23,16]],
+ 'Suzuki': [['yes125','Yes 125',124,11.5,13,40],['intruder125','Intruder 125',125,10.8,9.8,38],['dl650','V-Strom 650',645,71,20,21],['vstrom800','V-Strom 800DE',776,84,20,21],['vstrom1050','V-Strom 1050',1037,107,20,17],['gsx8s','GSX-8S',776,82,14,21],['gsxs750','GSX-S750',749,114,16,18],['hayabusa','Hayabusa',1340,190,20,14],['burgman400','Burgman 400',400,31,13.5,27],['boulevard','Boulevard M800',805,51,15.5,19]],
+ 'Kawasaki': [['ninja400','Ninja 400',399,45,14,23],['z400','Z400',399,45,14,23],['versysx300','Versys-X 300',296,40,17,26],['z650','Z650',649,68,15,21],['ninja650','Ninja 650',649,68,15,21],['versys650','Versys 650',649,66,21,21],['vulcan650','Vulcan S 650',649,61,14,21],['z900','Z900',948,125,17,17],['versys1000','Versys 1000',1043,120,21,16],['ninja1000sx','Ninja 1000SX',1043,142,19,16],['klr650','KLR 650',652,40,23,22]],
+ 'BMW': [['g310r','G 310 R',313,34,11,28],['g310gs','G 310 GS',313,34,11,28],['f750gs','F 750 GS',853,77,15,21],['f850gs','F 850 GS / F 900 GS',895,105,15,19],['f900r','F 900 R / XR',895,105,13,19],['s1000xr','S 1000 XR',999,170,20,15],['gs1250','R 1250 GS',1254,136,20,18],['gs1250a','R 1250 GS Adventure',1254,136,30,18],['gs1300','R 1300 GS',1300,145,19,18],['rt1250','R 1250 RT',1254,136,25,18],['rninet','R nineT',1170,109,17,17],['k1600','K 1600 GT',1649,160,26.5,15]],
+ 'Triumph': [['speed400','Speed 400',398,40,13,28],['scrambler400','Scrambler 400 X',398,40,13,27],['trident660','Trident 660',660,81,14,21],['tiger660','Tiger Sport 660',660,81,17.2,21],['street_twin','Speed Twin 900',900,65,12,21],['bonneville','Bonneville T120',1200,80,14.5,19],['tiger850','Tiger 850 Sport',888,85,20,20],['tiger900','Tiger 900',888,108,20,19],['tiger1200','Tiger 1200',1160,150,20,16],['rocket3','Rocket 3',2458,182,18,13]],
+ 'Ducati': [['scrambler','Scrambler 800',803,73,13.5,19],['monster','Monster 937',937,111,14,18],['multistrada950','Multistrada V2',937,113,20,18],['multistrada','Multistrada V4',1158,170,22,15],['desertx','DesertX',937,110,21,18],['diavel','Diavel V4',1158,168,20,14],['panigale','Panigale V4',1103,215,17,12]],
+ 'Harley-Davidson': [['sportster','Sportster S',1252,121,11.8,17],['nightster','Nightster 975',975,90,11.7,18],['fatboy','Fat Boy 114',1868,94,18.9,17],['heritage','Heritage Classic 114',1868,94,18.9,17],['streetbob','Street Bob 114',1868,94,13.2,17],['lowrider','Low Rider S',1923,103,18.9,16],['streetglide','Street Glide',1923,105,22.7,16],['roadglide','Road Glide',1923,105,22.7,16],['panamerica','Pan America 1250',1252,150,21.2,16]],
+ 'KTM': [['duke200','200 Duke',199.5,25,13.5,30],['duke390','390 Duke / Adventure',373,44,14.5,25],['adv390','390 Adventure',373,44,14.5,25],['duke790','790 Duke',799,105,14,19],['adv890','890 Adventure',889,105,20,18],['adv1290','1290 Super Adventure',1301,160,23,15]],
+ 'Royal Enfield': [['hunter350','Hunter 350',349,20.2,13,32],['meteor350','Meteor 350',349,20.2,15,30],['classic350','Classic 350',349,20.2,13,30],['bullet350','Bullet 350',349,20.2,13,30],['scram411','Scram 411',411,24.3,15,28],['him411','Himalayan 411',411,24.3,15,27],['him450','Himalayan 450',452,40,17,27],['guerrilla450','Guerrilla 450',452,40,11,27],['interceptor650','Interceptor 650',648,47,13.7,23],['ct650','Continental GT 650',648,47,12.5,23],['supermeteor650','Super Meteor 650',648,47,15.7,22]],
+ 'Dafra': [['citycom300','Citycom 300i',278,22,10,30],['nh190','NH 190',183,17,13,33],['apache200','Apache RTR 200',197.8,20.5,12,32],['cruisym150','Cruisym 150',150,13.6,7,38]],
+ 'Shineray': [['jet125','Jet 125',125,9.5,5,45],['worker125','Worker 125',125,10,11,40],['xy150','XY 150 Jet',150,11.5,12,38],['shi175','SHI 175',175,13,13,35],['storm200','Storm 200',200,15,13,32]],
+ 'Haojue': [['dk150','DK 150',149,12,13,40],['chopper150','Chopper Road 150',149,12,14,38],['nk150','NK 150',149,12,13,40],['dr160','DR 160',162,14,12,36],['master250','Master Ride 250',250,19,15,30]],
+ 'Bajaj': [['dominar160','Dominar 160',160,17,12,35],['dominar200','Dominar 200',199.5,24.5,12,32],['dominar250','Dominar 250',248.8,27,13,30],['dominar400','Dominar 400',373,40,13,27]],
+ 'CFMoto': [['nk250','250NK',249,27,12,30],['nk450','450NK',449,48,14,25],['mt450','450MT',449,44,17.5,25],['mt800','800MT',799,95,19,20],['clc450','450CL-C',449,44,13,25]],
+ 'Voge': [['ds525x','525DSX',494,47,19,24],['300rally','300 Rally',292,29,14,28],['ac525x','525ACX',494,47,15,24]],
+ 'Benelli': [['trk251','TRK 251',249,26,18,30],['trk502','TRK 502 / 502X',500,47,20,23],['leoncino','Leoncino 500',500,47,13.5,23],['tnt600','TNT 600i',600,82,16,19]],
+ 'Husqvarna': [['svartpilen401','Svartpilen 401',399,45,13.5,25],['vitpilen401','Vitpilen 401',399,45,13.5,25],['norden901','Norden 901',889,105,19,18]],
+ 'Indian': [['scout','Scout',1133,101,12.5,17],['chief','Chief',1890,101,15.1,16],['ftr','FTR 1200',1203,122,13,17],['roadmaster','Roadmaster',1890,101,20.8,15]],
+ 'Aprilia / Moto Guzzi': [['tuareg660','Aprilia Tuareg 660',659,80,18,22],['rs660','Aprilia RS 660',659,100,15,20],['v85tt','Moto Guzzi V85 TT',853,76,23,20],['v7','Moto Guzzi V7',853,65,21,21],['stelvio','Moto Guzzi Stelvio',1042,115,21,17]],
+ 'MV Agusta': [['brutale800','Brutale 800',798,140,16.5,16],['lucky','Lucky Explorer 9.5',931,123,20,17]],
+ 'Outra': [['outra','Outra moto (vou informar)',0,0,15,25]]
 };
+const MOTOS = {};
+for (const [marca, lista] of Object.entries(MOTO_MARCAS)) for (const [id, modelo, cc, cv, tanque, kml] of lista) MOTOS[id] = { n: (marca === 'Outra' || marca.includes('/')) ? modelo : marca + ' ' + modelo, modelo, marca, cc, cv, tanque, kml };
+const marcaDe = id => (MOTOS[id] || MOTOS.outra).marca;
+// seletor em 2 etapas: primeiro a marca, depois o modelo
+function motoPickerHTML(pfx, model) {
+  const m = marcaDe(model || 'nx500');
+  return `<div class="field"><label for="${pfx}Marca">Marca</label><select class="input" id="${pfx}Marca">${Object.keys(MOTO_MARCAS).map(b => `<option value="${b}" ${b === m ? 'selected' : ''}>${b}</option>`).join('')}</select></div>
+   <div class="field"><label for="${pfx}Modelo">Modelo</label><select class="input" id="${pfx}Modelo">${MOTO_MARCAS[m].map(([id, modelo]) => `<option value="${id}" ${id === model ? 'selected' : ''}>${modelo}</option>`).join('')}</select></div>`;
+}
+function bindMotoPicker(pfx, onChange) {
+  const mb = document.getElementById(pfx + 'Marca'), mm = document.getElementById(pfx + 'Modelo'); if (!mb || !mm) return;
+  mb.onchange = () => { const lista = MOTO_MARCAS[mb.value]; mm.innerHTML = lista.map(([id, modelo]) => `<option value="${id}">${modelo}</option>`).join(''); mm.focus(); onChange && onChange(lista[0][0], true); };
+  mm.onchange = () => onChange && onChange(mm.value, false);
+}
 const CAT={
  turismo:{n:'Turismo',icon:'camera',color:'#2563EB'},
  posto:{n:'Postos',icon:'fuel',color:'#0F766E'},
