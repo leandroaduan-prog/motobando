@@ -34,8 +34,9 @@ let TRIPS = store.get('mb-trips', {});
 store.set('mb-folderOpen', false); // a pasta abre fechada quando o app é aberto
 function saveTripLocal(room) {
   if (!room || !room.members[ME.id]) return;
-  const m = room.members[ME.id], guide = room.trip.guideId === ME.id;
-  TRIPS[room.code] = { gone: false, status: room.trip.status || 'planejada', code: room.code, name: room.trip.name, date: room.trip.date, startTime: room.trip.startTime, mode: room.trip.mode, role: m.role, guide,
+  const m = room.members[ME.id], guide = room.trip.guideId === ME.id, prev = TRIPS[room.code];
+  let saved = prev ? prev.saved !== false : true; if (!prev && UI.draftNext) { saved = false; UI.draftNext = false; }
+  TRIPS[room.code] = { saved, gone: false, status: room.trip.status || 'planejada', code: room.code, name: room.trip.name, date: room.trip.date, startTime: room.trip.startTime, mode: room.trip.mode, role: m.role, guide,
     stops: room.trip.stops.length, dist: room.trip.route ? room.trip.route.dist_km : null, members: Object.keys(room.members).length, updatedAt: Date.now(),
     snap: guide ? { trip: room.trip, expenses: room.expenses } : null,
     copy: guide ? null : { name: room.trip.name, startTime: room.trip.startTime, mode: room.trip.mode, stops: room.trip.stops, checklist: room.trip.checklist } };
@@ -551,7 +552,7 @@ const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 const tripPhase = t => t.status === 'encerrada' ? 'feita' : (t.status === 'andamento' || t.date === todayStr()) ? 'andamento' : (t.date && t.date < todayStr()) ? 'feita' : 'proxima';
 function activeTripHTML() { return ''; }
 function tripListHTML() {
-  const list = Object.values(TRIPS).sort((a, b) => String(a.date || '9').localeCompare(String(b.date || '9')));
+  const list = Object.values(TRIPS).filter(t => t.saved !== false).sort((a, b) => String(a.date || '9').localeCompare(String(b.date || '9')));
   const act = list.filter(t => tripPhase(t) === 'andamento' && !t.gone), next = list.filter(t => tripPhase(t) === 'proxima'), past = list.filter(t => tripPhase(t) === 'feita').reverse();
   const card = (t, kind) => { const d = t.date ? new Date(t.date + 'T12:00:00') : null; const role = t.mode === 'solo' ? 'Solo' : t.guide ? 'Guia' : t.role === 'garupa' ? 'Garupa' : 'Integrante';
     return `<div class="trip-card ${t.gone ? 'gone' : ''} ${kind}"><button type="button" class="trip-open" data-open="${esc(t.code)}"><span class="trip-date">${d ? `<b>${d.getDate()}</b>${d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}` : '<b>?</b>data'}</span><span class="trip-info"><b>${esc(t.name)}</b><span>${esc(role)} · ${t.stops} parada${t.stops === 1 ? '' : 's'}${t.dist ? ' · ' + f0(t.dist) + ' km' : ''}${t.mode !== 'solo' && t.members > 1 ? ' · ' + t.members + ' pessoas' : ''}${t.gone ? ' · não existe mais' : ''}</span></span></button>
@@ -580,7 +581,7 @@ function bindTripList() {
     const t = TRIPS[b.dataset.dup]; if (!t || !(t.snap || t.copy)) return toast('Abra a viagem uma vez para poder repetir');
     const tr = t.snap ? t.snap.trip : t.copy;
     const repeat = tripPhase(t) === 'feita';
-    send({ t: 'create', trip: { name: repeat ? tr.name : tr.name + ' (cópia)', date: '', startTime: tr.startTime, mode: tr.mode, stops: tr.stops, checklist: tr.checklist, route: tr.route || null, postos: tr.postos || [] }, member: memberPayload('guia') });
+    UI.draftNext = true; send({ t: 'create', trip: { name: repeat ? tr.name : tr.name + ' (cópia)', date: '', startTime: tr.startTime, mode: tr.mode, stops: tr.stops, checklist: tr.checklist, route: tr.route || null, postos: tr.postos || [] }, member: memberPayload('guia') });
     UI.afterCreate = true; toast(repeat ? 'Viagem repetida! Escolha a nova data em “Dados da viagem”.' : 'Viagem duplicada. Ajuste a data.', 6000);
   });
 }
@@ -625,7 +626,7 @@ function memberPayload(role) { return { id: ME.id, name: ME.name, color: ME.colo
 function createTrip(mode) {
   const d = new Date(); d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7)); // próximo sábado
   const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  send({ t: 'create', trip: { name: mode === 'solo' ? 'Minha viagem' : 'Viagem do bando', date, startTime: '07:00', mode }, member: memberPayload('guia') });
+  UI.draftNext = true; send({ t: 'create', trip: { name: mode === 'solo' ? 'Minha viagem' : 'Viagem do bando', date, startTime: '07:00', mode }, member: memberPayload('guia') });
   UI.afterCreate = true;
   toast('Criando a viagem…');
 }
@@ -708,6 +709,7 @@ function shareRouteText() {
     st.map((s, i) => `${s.km != null && ROOM.trip.route ? hhmm(timeAt(s.km)) : (i + 1) + '.'}  ${s.name}${s.km != null ? ' (km ' + f0(s.km) + ')' : ''}`).join('\n') +
     `\n\nRoteiro e mapa: ${location.origin}/r/${ROOM.code}`;
 }
+function shareAllText() { return shareRouteText() + `\n\nPara ir junto: abra o link, faça seu cadastro (nome e moto) e entre com o código ${ROOM.code}`; }
 function shareCodeText() { return `Bora rodar junto? Entra no meu bando no MotoBando.\nViagem: ${ROOM.trip.name}, ${fmtDate(ROOM.trip.date)}\n\n1. Abra o link: ${location.origin}/r/${ROOM.code}\n2. Faça seu cadastro (nome e moto)\n3. Entre com o código: ${ROOM.code}`; }
 const waLink = t => 'https://wa.me/?text=' + encodeURIComponent(t);
 function fmtDate(d) { if (!d) return 'data a combinar'; const x = new Date(d + 'T12:00:00'); return x.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }); }
@@ -715,7 +717,7 @@ function copyText(t, ok) { (navigator.clipboard ? navigator.clipboard.writeText(
 
 function renderViagem() {
   if (!ROOM) return;
-  const solo = isSolo(), G = isGuide(), mm = meM(), T = tripPlan(), R = routeModel();
+  const solo = isSolo(), G = isGuide(), mm = meM(), T = tripPlan(), R = routeModel(), draft = isDraft();
   const st = stopsKm(), ms = membersArr(), rs = riders();
   const tot = ROOM.trip.checklist.length, myDone = ROOM.trip.checklist.filter(c => (mm.checks || {})[c.id]).length;
   const doneOf = m => ROOM.trip.checklist.filter(c => (m.checks || {})[c.id]).length;
@@ -727,23 +729,16 @@ function renderViagem() {
   $('#v-viagem').innerHTML = `<div class="pad">
   <div class="sign"><div class="eyebrow">${solo ? 'Viagem solo' : 'Viagem do bando'} · ${esc(fmtDate(ROOM.trip.date))}</div><h1>${esc(ROOM.trip.name)}</h1>
    <div class="sign-row"><span><b class="num">${R ? f0(R.total) : '—'}</b> km</span><span>Saída <b>${esc(ROOM.trip.startTime)}</b></span>${R ? `<span>Chegada <b class="num">${hhmm(timeAt(R.total))}</b></span>` : ''}<span><b>${rs.length}</b> moto${rs.length > 1 ? 's' : ''} · <b>${ms.length}</b> pessoa${ms.length > 1 ? 's' : ''}</span></div></div>
-  <button class="btn btn-wide" type="button" id="toFolder">${ic('list')}Minhas viagens</button>
   ${ROOM.trip.status === 'andamento' ? `<div class="active-trip" style="cursor:default"><span class="live-dot"></span><span style="flex:1;min-width:0"><small>Viagem em andamento</small><b>Boa estrada!</b><span>Começou às ${hhmm(new Date(ROOM.trip.startedAt || Date.now()))}</span></span></div>` : ''}
   ${G && ROOM.trip.status !== 'andamento' ? `<button class="btn primary btn-wide start-btn" type="button" id="startTrip">${ic('flag')}Começar a viagem agora</button>` : ''}
   ${G && ROOM.trip.status === 'andamento' ? `<button class="btn btn-wide" type="button" id="endTrip">${ic('check')}Encerrar a viagem</button>` : ''}
-  ${G ? `<div class="card mode-switch"><div class="toggle-row"><div><b>${solo ? 'Viagem solo' : 'Viagem em grupo'}</b><div class="note">${solo ? 'Ligue para virar grupo: você vira o guia e manda a rota e o código para quem vai junto.' : 'Você é o guia. Desligue para voltar a ser viagem solo.'}</div></div><input type="checkbox" class="switch" id="modeSwitch" ${solo ? '' : 'checked'} aria-label="Viagem em grupo"></div></div>` : ''}
-  ${G ? `<details class="card" ${ROOM.trip.stops.length ? '' : 'open'}><summary style="font-weight:700;cursor:pointer;min-height:32px">Dados da viagem</summary>
+  ${G ? `<details class="card" ${ROOM.trip.stops.length ? '' : 'open'}><summary style="font-weight:700;cursor:pointer;min-height:32px">Nome, data e horário de saída</summary>
    <form id="tripForm" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
     <div class="field"><label for="tName">Nome</label><input class="input" id="tName" maxlength="60" value="${esc(ROOM.trip.name)}"></div>
     <div class="row"><div class="field"><label for="tDate">Data</label><input class="input" id="tDate" type="date" value="${esc(ROOM.trip.date || '')}"></div><div class="field"><label for="tTime">Saída</label><input class="input" id="tTime" type="time" value="${esc(ROOM.trip.startTime)}"></div></div>
-    <button class="btn primary btn-wide" type="submit">Salvar</button></form></details>` : ''}
+    </form></details>` : ''}
+  ${G ? `<div class="card mode-switch"><div class="toggle-row"><div><b>${solo ? 'Viagem solo' : 'Viagem em grupo'}</b><div class="note">${solo ? 'Ligue para virar grupo: você vira o guia e manda a rota e o código para quem vai junto.' : 'Você é o guia. Desligue para voltar a ser viagem solo.'}</div></div><input type="checkbox" class="switch" id="modeSwitch" ${solo ? '' : 'checked'} aria-label="Viagem em grupo"></div></div>` : ''}
 
-  <section class="card" style="display:flex;flex-direction:column;gap:12px">
-   <div><div class="eyebrow">Compartilhar</div><b>${solo ? 'Mande o roteiro para quem fica, e o código para o seu garupa' : 'Mande o roteiro e o código para o bando'}</b></div>
-   <a class="btn wa btn-wide" href="${waLink(shareRouteText())}" target="_blank" rel="noopener">${ic('wa')}Enviar roteiro pelo WhatsApp</a>
-   <a class="btn wa btn-wide" href="${waLink(shareCodeText())}" target="_blank" rel="noopener">${ic('wa')}Enviar código pelo WhatsApp</a>
-   <div class="code-box"><div><div class="note">Código do grupo</div><code>${esc(ROOM.code)}</code></div><button class="btn small" type="button" id="copyCode">${ic('copy')}Copiar</button></div>
-  </section>
 
   <section style="display:flex;flex-direction:column;gap:10px">
    <div class="sec-h"><h2>Roteiro e paradas</h2>${G ? '<span class="pill green">Você edita</span>' : '<span class="pill">Definido pelo guia</span>'}</div>
@@ -815,13 +810,24 @@ function renderViagem() {
     <div class="toggle-row"><div><b>Mostrar postos no mapa</b></div><input type="checkbox" class="switch" id="showPostos" ${UI.showPostos ? 'checked' : ''}></div>
     <div class="toggle-row"><div><b>Simular meu GPS na rota</b><div class="note">Para testar em casa: seu capacete anda pela rota e o bando vê.</div></div><input type="checkbox" class="switch" id="simOn" ${SIM.on ? 'checked' : ''} ${R ? '' : 'disabled'}></div>
     ${SIM.on ? `<div class="toggle-row"><span>Velocidade da simulação</span><div class="seg" role="group">${[[60, '60 km/h'], [600, '10x'], [3000, '50x']].map(([v, l]) => `<button type="button" data-sim="${v}" aria-pressed="${SIM.speed == v}">${l}</button>`).join('')}</div></div>` : ''}
-    <button class="btn btn-wide" type="button" id="leave" style="color:var(--sos)">${ic('logout')}Sair desta viagem</button>
    </div>
   </section>
+
+  <section class="card" style="display:flex;flex-direction:column;gap:12px">
+   <div><div class="eyebrow">Compartilhar</div><b>${solo ? 'Mande o roteiro para quem fica em casa (o código vai junto, para o garupa entrar)' : 'Mande o roteiro e o código para o bando'}</b></div>
+   <a class="btn wa btn-wide" href="${waLink(shareAllText())}" target="_blank" rel="noopener">${ic('wa')}Enviar pelo WhatsApp</a>
+   <div class="code-box"><div><div class="note">Código do grupo</div><code>${esc(ROOM.code)}</code></div><button class="btn small" type="button" id="copyCode">${ic('copy')}Copiar</button></div>
+  </section>
+
+  <div class="trip-actions">
+   ${G ? `<button class="btn primary btn-wide" type="button" id="saveTrip">${ic('check')}${draft ? 'Salvar em Minhas viagens' : 'Salvar'}</button>` : ''}
+   <button class="btn btn-wide" type="button" id="exitTrip">${ic('logout')}Sair da viagem</button>
+  </div>
  </div>`;
   const v = $('#v-viagem');
-  const tf = $('#tripForm'); if (tf) tf.onsubmit = e => { e.preventDefault(); patchTrip({ name: $('#tName').value.trim(), date: $('#tDate').value, startTime: $('#tTime').value || '07:00' }); toast('Viagem salva'); };
-  $('#toFolder').onclick = goHome;
+  const tf = $('#tripForm'); if (tf) { tf.onsubmit = e => { e.preventDefault(); saveTripNow(); }; tf.oninput = () => { UI.tripDirty = true; }; }
+  const svB = $('#saveTrip'); if (svB) svB.onclick = () => { saveTripNow(); renderViagem(); };
+  $('#exitTrip').onclick = () => exitTripPrompt();
   const stB = $('#startTrip'); if (stB) stB.onclick = () => { ROOM.trip.status = 'andamento'; ROOM.trip.startedAt = Date.now(); patchTrip({ status: 'andamento' }); toast('Viagem em andamento! O bando foi avisado.'); go('mapa'); if (!UI.nav) { UI.nav = true; UI.userMovedMap = 0; keepAwake(true); updateMapOverlays(); followMe(); } };
   const enB = $('#endTrip'); if (enB) enB.onclick = () => { ROOM.trip.status = 'encerrada'; patchTrip({ status: 'encerrada' }); toast('Viagem encerrada. Ela fica nas viagens já feitas.'); renderViagem(); };
   const mSw = $('#modeSwitch'); if (mSw) mSw.onchange = e => {
@@ -860,20 +866,45 @@ function renderViagem() {
   $('#showPostos').onchange = e => { UI.showPostos = e.target.checked; drawRoute(); };
   $('#simOn').onchange = e => { setSim(e.target.checked); renderViagem(); if (SIM.on) toast('Simulando: vá para o mapa e toque em Navegar'); };
   v.querySelectorAll('[data-sim]').forEach(b => b.onclick = () => { SIM.speed = +b.dataset.sim; renderViagem(); });
-  $('#leave').onclick = () => {
-    $('#modalRoot').innerHTML = `<div class="overlay center"><div class="incoming" style="border-color:var(--line)"><h2 style="margin:0;font-family:var(--f-display);font-size:26px">Sair de “${esc(ROOM.trip.name)}”?</h2><p class="muted" style="margin:0">${G && membersArr().length > 1 ? 'O papel de guia passa para outra pessoa do grupo.' : 'Você pode voltar depois com o mesmo código.'}</p><div class="row"><button class="btn" style="flex:1;color:var(--sos)" type="button" id="lvYes">Sair</button><button class="btn primary" style="flex:1" type="button" id="lvNo">Ficar</button></div></div></div>`;
-    $('#lvYes').onclick = () => { $('#modalRoot').innerHTML = ''; setSim(false); send({ t: 'leave' }); };
-    $('#lvNo').onclick = () => $('#modalRoot').innerHTML = '';
-  };
 }
+
+/* salvar / sair da viagem */
+const isDraft = () => !!(ROOM && TRIPS[ROOM.code] && TRIPS[ROOM.code].saved === false);
+function saveTripNow(silent) {
+  if (!ROOM) return;
+  if (isGuide() && $('#tName')) { const name = $('#tName').value.trim() || ROOM.trip.name, date = $('#tDate').value, startTime = $('#tTime').value || '07:00'; if (name !== ROOM.trip.name || date !== (ROOM.trip.date || '') || startTime !== ROOM.trip.startTime) patchTrip({ name, date, startTime }); }
+  UI.tripDirty = false;
+  saveTripLocal(ROOM); if (TRIPS[ROOM.code]) { TRIPS[ROOM.code].saved = true; store.set('mb-trips', TRIPS); }
+  if (!silent) toast('Viagem salva em Minhas viagens');
+}
+function exitTripPrompt(after) {
+  if (!ROOM) return after ? after() : showHome();
+  const done = () => { $('#modalRoot').innerHTML = ''; goHome(); if (after) after(); };
+  const draft = isDraft(), dirty = UI.tripDirty;
+  $('#modalRoot').innerHTML = `<div class="overlay center"><div class="incoming" style="border-color:var(--line)">
+   <h2 style="margin:0;font-family:var(--f-display);font-size:26px">${draft ? 'Salvar esta viagem?' : 'Sair da viagem?'}</h2>
+   <p class="muted" style="margin:0">${draft ? 'Salvando, ela fica guardada em Minhas viagens e você pode abrir de novo quando quiser.' : dirty ? 'Você mudou nome, data ou horário. Quer salvar antes de sair?' : 'Ela continua guardada em Minhas viagens.'}</p>
+   <div style="display:flex;flex-direction:column;gap:10px">
+    <button class="btn primary btn-wide" type="button" id="exSave">${ic('check')}Salvar e sair</button>
+    <button class="btn btn-wide" type="button" id="exNo" style="color:var(--sos)">${draft ? 'Sair sem salvar (apagar)' : 'Sair sem salvar'}</button>
+    <button class="btn ghost btn-wide" type="button" id="exBack">Continuar na viagem</button>
+   </div></div></div>`;
+  $('#exSave').onclick = () => { saveTripNow(true); toast('Viagem salva em Minhas viagens'); done(); };
+  $('#exNo').onclick = () => {
+    UI.tripDirty = false;
+    if (draft) { const code = ROOM.code; $('#modalRoot').innerHTML = ''; setSim(false); send({ t: 'leave' }); dropTripLocal(code); CODE = null; ROOM = null; store.set('mb-code', null); store.set('mb-room', null); showHome(); toast('Viagem descartada'); if (after) after(); }
+    else done();
+  };
+  $('#exBack').onclick = () => $('#modalRoot').innerHTML = '';
+}
+const needExitPrompt = () => !!ROOM && (isDraft() || UI.tripDirty);
 
 function showInvite() {
   $('#modalRoot').innerHTML = `<div class="overlay"><div class="modal" role="dialog" aria-label="Convidar o bando">
    <div class="sec-h"><h2>Virou viagem em grupo!</h2><button class="iconbtn" type="button" id="invX" aria-label="Fechar">${ic('x')}</button></div>
    <p class="muted" style="margin:0">Você agora é o guia. A rota e as paradas já estão montadas. Mande o convite: quem receber faz o cadastro (nome e moto) e entra com o código.</p>
    <div class="code-box"><div><div class="note">Código do grupo</div><code>${esc(ROOM.code)}</code></div></div>
-   <a class="btn wa btn-wide" href="${waLink(shareCodeText())}" target="_blank" rel="noopener">${ic('wa')}Enviar convite e código pelo WhatsApp</a>
-   <a class="btn wa btn-wide" href="${waLink(shareRouteText())}" target="_blank" rel="noopener">${ic('wa')}Enviar o roteiro pelo WhatsApp</a>
+   <a class="btn wa btn-wide" href="${waLink(shareAllText())}" target="_blank" rel="noopener">${ic('wa')}Enviar convite pelo WhatsApp</a>
    <button class="btn btn-wide" type="button" id="invOk">Depois eu mando</button></div></div>`;
   $('#invX').onclick = $('#invOk').onclick = () => $('#modalRoot').innerHTML = '';
 }
@@ -1078,26 +1109,42 @@ async function showPlanner() {
   const placeField = (key, label, ph) => `<div class="field"><label for="pf_${key}">${label}</label>
     ${pf[key] ? `<div class="code-box" style="border-style:solid"><div style="min-width:0"><b>${esc(pf[key].name)}</b><div class="note">${esc(pf[key].display || '')}</div></div><button class="btn small" type="button" data-clear="${key}">Trocar</button></div>`
       : `<div class="row"><div class="field"><input class="input" id="pf_${key}" placeholder="${ph}"></div><button class="btn" type="button" data-find="${key}">${ic('search')}</button>${key === 'origin' ? `<button class="btn" type="button" id="pfMe" aria-label="Usar minha localização">${ic('gps')}</button>` : ''}</div><div class="results" id="pfr_${key}"></div>`}</div>`;
+  const step = (n, t) => `<div class="step-h"><span class="step-n">${n}</span><h2>${t}</h2></div>`;
   $('#v-plan').innerHTML = `<div class="pad">
-   <button class="btn btn-wide" type="button" id="plBack">${ic('list')}Voltar para minhas viagens</button>
-   <div class="sign"><div class="eyebrow">Novo · Criador automático</div><h1>Viagem montada pra você</h1><div class="sign-row"><span>Rota, paradas, postos, onde comer e dormir, 3 orçamentos e dicas de fronteira</span></div></div>
-   ${st && !st.premium ? `<div class="banner ${st.used >= st.free ? 'red' : 'amber'}" style="box-shadow:none">${ic('crown')}<div>${st.used >= st.free ? '<b>Você já usou sua viagem automática grátis.</b> Com o Bando+ você cria quantas quiser.' : '<b>Grátis: 1 viagem automática</b> para você experimentar. Depois, faz parte do Bando+.'}</div></div>` : ''}
-   ${st && !st.google ? `<div class="banner" style="box-shadow:none">${ic('star')}<div>As notas do Google ainda não estão ligadas. Por enquanto os lugares são escolhidos pelo OpenStreetMap.</div></div>` : ''}
-   <section class="card" style="display:flex;flex-direction:column;gap:14px">
+   <div class="sign"><div class="eyebrow">Criador automático</div><h1>Viagem montada pra você</h1><div class="sign-row"><span>Responda 5 passos. O app monta rota, paradas, postos, onde comer e dormir, com 3 orçamentos.</span></div></div>
+
+   <section class="card step-card">${step(1, 'Para onde você vai')}
     ${placeField('origin', 'Saindo de', 'Cidade ou endereço')}
     ${placeField('dest', 'Indo para', 'Ex.: Florianópolis, Bariloche, Ushuaia…')}
     ${placeField('via', 'Passando por (opcional)', 'Ex.: Gramado')}
-    <div class="row"><div class="field"><label for="pfDate">Saída</label><input class="input" id="pfDate" type="date" value="${esc(pf.date)}"></div><div class="field"><label for="pfTime">Horário</label><input class="input" id="pfTime" type="time" value="${esc(pf.time)}"></div></div>
-    <div class="field"><label>Puxada: quantos km por dia</label>
+   </section>
+
+   <section class="card step-card">${step(2, 'Quando')}
+    <div class="row"><div class="field"><label for="pfDate">Dia da saída</label><input class="input" id="pfDate" type="date" value="${esc(pf.date)}"></div><div class="field"><label for="pfTime">Horário</label><input class="input" id="pfTime" type="time" value="${esc(pf.time)}"></div></div>
+   </section>
+
+   <section class="card step-card">${step(3, 'Quantos km por dia')}
      <div class="chips" style="flex-wrap:wrap">${[200, 300, 400, 500, 600, 800].map(k => `<button class="chip" type="button" data-daily="${k}" aria-pressed="${pf.daily == k}">${k} km</button>`).join('')}</div>
-     <div class="stepper" style="margin-top:8px"><button type="button" id="dDn" aria-label="Menos">${ic('minus')}</button><output class="num" id="dLbl">${pf.daily} km/dia</output><button type="button" id="dUp" aria-label="Mais">${ic('plus')}</button></div>
-     <p class="note" style="margin:0">Até 300 km o dia é tranquilo. Acima de 500 km é puxada forte, com pouco tempo para passeio.</p></div>
+     <div class="stepper"><button type="button" id="dDn" aria-label="Menos">${ic('minus')}</button><output class="num" id="dLbl">${pf.daily} km/dia</output><button type="button" id="dUp" aria-label="Mais">${ic('plus')}</button></div>
+     <p class="note" style="margin:0">Até 300 km o dia é tranquilo. Acima de 500 km é puxada forte, com pouco tempo para passeio.</p>
+   </section>
+
+   <section class="card step-card">${step(4, 'O que incluir')}
     <div class="toggle-row"><div><b>Pontos turísticos no caminho</b><div class="note">Mirantes, cachoeiras e atrações perto da rota</div></div><input type="checkbox" class="switch" id="pfTur" ${pf.turismo ? 'checked' : ''}></div>
     <div class="toggle-row"><div><b>Estradas de terra e trilhas</b><div class="note">Sugestões fora de estrada perto dos pernoites</div></div><input type="checkbox" class="switch" id="pfOff" ${pf.offroad ? 'checked' : ''}></div>
-    <div class="row"><div class="field"><label>Sua moto</label><div class="small" style="font-weight:600">${esc(spec.n)} · ${spec.el ? 'elétrica, ~' + spec.el.auton + ' km por carga' : f1(spec.tanque) + ' L · ~' + f1(+ME.moto.real || spec.kml) + ' km/L'}</div><div class="note">Troque na aba Moto de qualquer viagem.</div></div><div class="field" style="flex:0 1 120px"><label for="pfPreco">Litro (R$)</label><input class="input num" id="pfPreco" type="number" inputmode="decimal" step="0.01" value="${pf.preco}"></div></div>
-    <button class="btn primary btn-wide" type="button" id="pfGo">${ic('route')}Montar minha viagem</button>
    </section>
-   <button class="btn btn-wide" type="button" id="pfBorders">${ic('book')}Guia de fronteiras</button>
+
+   <section class="card step-card">${step(5, 'Sua moto e combustível')}
+    <div class="row"><div class="field"><label>Sua moto</label><div class="small" style="font-weight:600">${esc(spec.n)} · ${spec.el ? 'elétrica, ~' + spec.el.auton + ' km por carga' : f1(spec.tanque) + ' L · ~' + f1(+ME.moto.real || spec.kml) + ' km/L'}</div><div class="note">Troque na aba Moto de qualquer viagem.</div></div><div class="field" style="flex:0 1 120px"><label for="pfPreco">Litro (R$)</label><input class="input num" id="pfPreco" type="number" inputmode="decimal" step="0.01" value="${pf.preco}"></div></div>
+   </section>
+
+   ${st && !st.premium ? `<div class="banner ${st.used >= st.free ? 'red' : 'amber'}" style="box-shadow:none">${ic('crown')}<div>${st.used >= st.free ? '<b>Você já usou sua viagem automática grátis.</b> Com o Bando+ você cria quantas quiser.' : '<b>Grátis: 1 viagem automática</b> para você experimentar. Depois, faz parte do Bando+.'}</div></div>` : ''}
+   ${st && !st.google ? `<div class="banner" style="box-shadow:none">${ic('star')}<div>As notas do Google ainda não estão ligadas. Por enquanto os lugares são escolhidos pelo OpenStreetMap.</div></div>` : ''}
+   <button class="btn primary btn-wide start-btn" type="button" id="pfGo">${ic('route')}Montar minha viagem</button>
+   <div class="trip-actions">
+    <button class="btn btn-wide" type="button" id="pfBorders">${ic('book')}Guia de fronteiras</button>
+    <button class="btn ghost btn-wide" type="button" id="plBack">Voltar para o início</button>
+   </div>
   </div>`;
   const savePf = () => store.set('mb-planform', UI.pf);
   $('#plBack').onclick = () => { UI.plan = null; showHome(); };
@@ -1206,7 +1253,7 @@ function savePlan() {
     if (L) stops.push({ id: uid(), name: L.name, lat: L.lat, lng: L.lng, type: 'pernoite', note: `Dia ${d.n}${L.rating ? ' · ★' + f1(L.rating) : ''}` });
     else if (di === P.days.length - 1) stops.push({ id: uid(), name: P.dest.name, lat: P.dest.lat, lng: P.dest.lng, type: 'pernoite', note: 'Destino' });
   });
-  send({ t: 'create', trip: { name: `${P.origin.name} → ${P.dest.name}`, date: P.days[0].date, startTime: UI.pf.time, mode: 'solo', stops: stops.slice(0, 100) }, member: memberPayload('guia') });
+  UI.draftNext = true; send({ t: 'create', trip: { name: `${P.origin.name} → ${P.dest.name}`, date: P.days[0].date, startTime: UI.pf.time, mode: 'solo', stops: stops.slice(0, 100) }, member: memberPayload('guia') });
   UI.afterCreate = true; UI.plan = null; toast('Viagem salva na sua pasta. Se for em grupo, ligue a chave e mande o convite.', 6000);
 }
 function showBorders() {
@@ -1265,7 +1312,7 @@ window.addEventListener('popstate', e => {
     else if (id === 'plan') { UI.plan = null; showPlanner(); }
     else if (id === 'planres' && UI.plan) renderPlanResult();
     else if (id === 'borders') showBorders();
-    else { if (ROOM) goHome(); else showHome(); }
+    else { if (needExitPrompt()) { const tid = 'trip:' + (UI.tab || 'viagem'); setTimeout(() => { history.pushState({ mb: tid }, ''); NAV = tid; exitTripPrompt(); }, 0); } else if (ROOM) goHome(); else showHome(); }
   } finally { navFromPop = false; NAV = id; }
 });
 
@@ -1413,7 +1460,7 @@ async function syncTripsFromServer() {
     let changed = false;
     for (const t of list) {
       const old = TRIPS[t.code] || {};
-      TRIPS[t.code] = { ...old, ...t, gone: false, snap: old.snap || null, copy: old.copy || null, updatedAt: Date.now() };
+      TRIPS[t.code] = { ...old, ...t, saved: old.saved !== false, gone: false, snap: old.snap || null, copy: old.copy || null, updatedAt: Date.now() };
       changed = true;
     }
     if (changed) { store.set('mb-trips', TRIPS); if (!$('#v-home').hidden && !(document.activeElement && /INPUT|SELECT/.test(document.activeElement.tagName))) showHome(); }
@@ -1439,8 +1486,8 @@ function openUserMenu() {
     ${item('mContact', 'chat', 'Contato comercial', 'Parcerias, anúncios e motoclubes')}
    </nav></div></div>`;
   $('#mX').onclick = closeModal; $('#ov').onclick = e => { if (e.target.id === 'ov') closeModal(); };
-  $('#mHome').onclick = () => { closeAllOverlays(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } $('#v-home').scrollTop = 0; };
-  $('#mTrips').onclick = () => { closeAllOverlays(); store.set('mb-folderOpen', true); if (ROOM) goHome(); else { UI.plan = null; showHome(); } setTimeout(() => { const f = $('#v-home .folder') || $('#v-home .home-active'); if (f) f.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60); };
+  $('#mHome').onclick = () => { closeAllOverlays(); if (needExitPrompt()) return exitTripPrompt(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } $('#v-home').scrollTop = 0; };
+  $('#mTrips').onclick = () => { closeAllOverlays(); store.set('mb-folderOpen', true); if (needExitPrompt()) return exitTripPrompt(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } setTimeout(() => { const f = $('#v-home .folder') || $('#v-home .home-active'); if (f) f.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60); };
   $('#mProfile').onclick = openProfile;
   $('#mPlans').onclick = () => openPremium();
   $('#mContact').onclick = openContact;
@@ -1508,7 +1555,7 @@ function openContact() {
 watchOverlays();
 syncTripsFromServer();
 $('#avatarBtn').onclick = openUserMenu;
-document.querySelector('.logo').onclick = () => { closeAllOverlays(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } };
+document.querySelector('.logo').onclick = () => { closeAllOverlays(); if (needExitPrompt()) return exitTripPrompt(); if (ROOM) goHome(); else { UI.plan = null; showHome(); } };
 function closeAllOverlays() { $('#modalRoot').innerHTML = ''; if (UI.road) { UI.road = false; renderRoad(); } if (UI.near) { UI.near = false; renderNear(); } }
 document.querySelector('.logo').style.cursor = 'pointer';
 renderAvatar(); planStatus().then(st => { UI.premium = !!(st && st.premium); renderAvatar(); });
