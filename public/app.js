@@ -522,6 +522,7 @@ function showHome() {
      <div class="seg" role="group" aria-label="Como você vai"><button type="button" data-jr="integrante" aria-pressed="true">Vou pilotando</button><button type="button" data-jr="garupa" aria-pressed="false">Vou de garupa</button></div>
      <button class="btn primary btn-wide" type="submit">${ic('users')}Entrar no grupo</button></form>
    <div class="eyebrow">Nova viagem</div>
+   <button class="choice ag" type="button" id="newAg">${ic('chat')}<div><b>Descreva sua viagem <span class="pill amber">Novo</span></b><span>Escreva ou fale do seu jeito, ou cole do WhatsApp: o app monta o roteiro.</span></div></button>
    <button class="choice auto" type="button" id="newAuto">${ic('route')}<div><b>Criar viagem automática <span class="pill amber">Bando+</span></b><span>Diga de onde sai, para onde vai e quantos km por dia. O app monta rota, paradas, postos, onde comer e dormir. 1 grátis.</span></div></button>
    <button class="choice primary" type="button" id="newGroup">${ic('users')}<div><b>Criar viagem em grupo</b><span>Você é o guia: monta a rota, as paradas e manda o código</span></div></button>
    <button class="choice" type="button" id="newSolo">${ic('helmet')}<div><b>Viagem solo</b><span>Você monta tudo. Se virar grupo depois, é só ligar a chave</span></div></button>
@@ -544,6 +545,7 @@ function showHome() {
   const ib = $('#installBtn'); if (ib) ib.onclick = doInstall;
   bindPersonalCode();
   const na = $('#newAuto'); if (na) na.onclick = showPlanner;
+  const nag = $('#newAg'); if (nag) nag.onclick = () => showAgente();
   const gb = $('#homeBorders'); if (gb) gb.onclick = showBorders;
   const hcl = $('#homeCls'); if (hcl) hcl.onclick = () => showClassicas();
   const e15 = $('#ex15'); if (e15) e15.onclick = () => loadExamples('grupo', 15, 24);
@@ -763,6 +765,7 @@ function renderViagem() {
     ${G ? `<div style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:12px;margin-top:6px">
       <form id="searchForm" class="row"><div class="field"><label for="sQ">${st.length ? 'Adicionar parada' : 'Ponto de saída'}</label><input class="input" id="sQ" placeholder="Ex.: Monte Verde MG, Pico Agudo…" required></div><button class="btn primary" type="submit">${ic('search')}Buscar</button></form>
       <div id="searchRes" class="results"></div>
+      <button class="btn" type="button" id="agAdd">${ic('chat')}Adicionar paradas escrevendo ou falando</button>
       <div class="row"><button class="btn" type="button" id="pickMap" style="flex:1">${ic('pin')}Tocar no mapa</button><button class="btn" type="button" id="useMe" style="flex:1">${ic('gps')}Minha localização</button></div>
       ${st.length >= 2 ? `<button class="btn primary" type="button" id="routeOpts">${ic('route')}Escolher o caminho: rápido, alternativo ou passeio</button>
       <button class="btn ghost" type="button" id="reroute">${ic('refresh')}Recalcular rota e postos</button>` : ''}
@@ -853,6 +856,7 @@ function renderViagem() {
       box.querySelectorAll('[data-res]').forEach(b => b.onclick = () => { const r = res[+b.dataset.res]; box.innerHTML = ''; $('#sQ').value = ''; addStop(r); });
     } catch (err) { box.innerHTML = `<p class="empty">Não consegui buscar agora (${esc(err.message)}).</p>`; }
   };
+  const aga = $('#agAdd'); if (aga) aga.onclick = agenteAddStops;
   const pm = $('#pickMap'); if (pm) pm.onclick = () => { UI.picking = true; go('mapa'); $('#map').classList.add('picking'); updateMapOverlays(); };
   const um = $('#useMe'); if (um) um.onclick = async () => { if (!myPos) return toast('Ainda sem GPS. Permita a localização.'); addStop({ name: await GEO.reverse(myPos.lat, myPos.lng), lat: myPos.lat, lng: myPos.lng }); };
   const rr = $('#reroute'); if (rr) rr.onclick = () => recalcRoute();
@@ -1337,6 +1341,7 @@ window.addEventListener('popstate', e => {
     else if (id === 'planres' && UI.plan) renderPlanResult();
     else if (id === 'borders') showBorders();
     else if (id === 'classicas') showClassicas();
+    else if (id === 'agente') showAgente();
     else { if (needExitPrompt()) { const tid = 'trip:' + (UI.tab || 'viagem'); setTimeout(() => { history.pushState({ mb: tid }, ''); NAV = tid; exitTripPrompt(); }, 0); } else if (ROOM) goHome(); else showHome(); }
   } finally { navFromPop = false; NAV = id; }
 });
@@ -1617,6 +1622,7 @@ function openRouteOptions(cfg) {
     const near = S.base ? GEO.classicsNear(S.base, S.opts ? S.opts.flatMap(o => o.classics || []).filter(id => !S.via.includes(id)) : [], 6) : [];
     const keep = box.scrollTop;
     box.innerHTML = `
+     ${cfg.hint ? `<div class="banner amber" style="box-shadow:none">${ic('star')}<div>${esc(cfg.hint)}</div></div>` : ''}
      <div class="seg seg-terra" role="group" aria-label="Terra"><button type="button" data-terra="0" aria-pressed="${!UI.terra}">Só asfalto</button><button type="button" data-terra="1" aria-pressed="${UI.terra}">Pode ter terra</button></div>
      ${S.busy ? `<div class="card" style="display:flex;gap:12px;align-items:center"><span class="spinner"></span><div>Procurando caminhos para moto…<div class="note">Rápido, alternativo e passeio com curvas.</div></div></div>` : ''}
      ${S.err ? `<div class="banner red" style="box-shadow:none">${ic('alert')}<div>${esc(S.err)}</div></div>` : ''}
@@ -1637,6 +1643,7 @@ function openRouteOptions(cfg) {
     try {
       const opts = await GEO.routeOptions(withClassics(cfg.points, S.via, S.base), { terra: UI.terra });
       if (my !== gen) return; S.opts = opts; if (!S.base) S.base = opts[0].coords;
+      if (cfg.via && cfg.via.length && !S.viaDone) { S.viaDone = true; const RB = GEO.build(S.base), lim = Math.max(15, RB.total * 0.08); S.via = cfg.via.filter(id => { const c = CLASSICAS.find(x => x.id === id); if (!c || c.fechada || c.semRota) return false; const pa = GEO.project(RB, c.a[0], c.a[1]), pb = GEO.project(RB, c.b[0], c.b[1]); return pa.off <= lim && pb.off <= lim; }); if (S.via.length) return load(); }
     } catch (e) { if (my === gen) S.err = 'Não consegui calcular os caminhos agora. Confira a internet e tente de novo.'; }
     S.busy = false; draw();
     (S.opts || []).forEach(async o => { o.elev = await GEO.elevation(o.coords); if (my === gen) draw(); if (UI.terra) { try { o.dirt = await GEO.dirtKm(o); } catch (x) { o.dirt = null; } if (my === gen) draw(); } });
@@ -1646,6 +1653,149 @@ function openRouteOptions(cfg) {
    <div id="roptBody" class="ropt-body"></div></div></div>`;
   $('#roX').onclick = () => { gen++; $('#modalRoot').innerHTML = ''; };
   load();
+}
+
+/* ================= DESCREVA SUA VIAGEM (agente) ================= */
+const AG_EX = ['Sábado saio de Atibaia às 7h, quero ir pra Paraty passando por Cunha e almoçar em São Luiz do Paraitinga. Só asfalto. Volto domingo pela Rio-Santos.', 'Viagem de 4 dias: Curitiba até a Serra do Rio do Rastro, dormir em Urubici, depois Cambará do Sul e voltar. Gosto de curvas, pode ter terra.'];
+const clsList = () => CLASSICAS.map(c => `${c.id}: ${c.n}`);
+async function agentePost(body) {
+  const r = await fetch('/api/agente', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: ME.id, classicas: clsList(), ...body }) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Não consegui agora.'); return j;
+}
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+async function geocodePts(list, near, onStep) {
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    onStep && onStep(i + 1, list.length);
+    let res = []; try { res = await GEO.search(list[i].lugar, near, true); } catch (e) {}
+    const best = res[0];
+    out.push({ ...list[i], alts: res.slice(0, 4), name: best ? best.name : list[i].lugar.split(',')[0], display: best ? best.display : '', lat: best ? best.lat : null, lng: best ? best.lng : null });
+    if (best) near = best;
+    if (i < list.length - 1) await sleepMs(1100);
+  }
+  return out;
+}
+async function showAgente() {
+  pushNav('agente');
+  hideAllViews(); $('#v-plan').hidden = false; $('#tripTitle').textContent = 'Descreva sua viagem'; $('#tripSub').textContent = 'O app monta o roteiro para você';
+  UI.ag = UI.ag || { texto: '', hist: [], res: null, pts: null, q: '' };
+  const A = UI.ag;
+  const stt = await fetch('/api/agente/status?user=' + encodeURIComponent(ME.id)).then(r => r.json()).catch(() => null);
+  $('#v-plan').innerHTML = `<div class="pad">
+   <div class="sign"><div class="eyebrow">Assistente de roteiro</div><h1>Conte do seu jeito</h1><div class="sign-row"><span>Escreva ou fale de onde sai, para onde vai, onde quer parar e quando. Pode colar um roteiro do WhatsApp.</span></div></div>
+   ${stt && !stt.on ? `<div class="banner amber" style="box-shadow:none">${ic('alert')}<div>O assistente ainda não está ligado. Enquanto isso, use o criador automático.</div></div>` : ''}
+   <section class="card step-card">
+    <textarea class="input ag-text" id="agTxt" rows="6" maxlength="2000" placeholder="Ex.: ${esc(AG_EX[0])}">${esc(A.texto)}</textarea>
+    <p class="note" style="margin:0">${ic('chat')} Dica: toque no <b>microfone do teclado</b> do celular e fale, o texto aparece sozinho.</p>
+    <div class="chips" style="flex-wrap:wrap">${AG_EX.map((t, i) => `<button class="chip" type="button" data-agex="${i}">Exemplo ${i + 1}</button>`).join('')}</div>
+    <button class="btn primary btn-wide start-btn" type="button" id="agGo" ${stt && !stt.on ? 'disabled' : ''}>${ic('route')}Montar roteiro</button>
+    ${stt && stt.on ? `<p class="note" id="agLeft" style="margin:0;text-align:center">Você pode usar ${stt.restam} de ${stt.porDia} hoje.</p>` : ''}
+   </section>
+   <div id="agRes"></div>
+   <div class="trip-actions"><button class="btn ghost btn-wide" type="button" id="agBack">Voltar para o início</button></div>
+  </div>`;
+  $('#agBack').onclick = () => showHome();
+  document.querySelectorAll('[data-agex]').forEach(b => b.onclick = () => { $('#agTxt').value = AG_EX[+b.dataset.agex]; A.texto = $('#agTxt').value; });
+  $('#agTxt').oninput = e => { A.texto = e.target.value; };
+  $('#agGo').onclick = () => { A.hist = []; A.res = null; A.pts = null; agenteRun(A.texto); };
+  if (A.pts) renderAgRes(); else if (A.q) renderAgQ();
+}
+async function agenteRun(texto) {
+  const A = UI.ag, box = $('#agRes'); if (!texto || texto.trim().length < 5) return toast('Escreva como vai ser a viagem');
+  box.innerHTML = `<div class="card" style="display:flex;gap:12px;align-items:center"><span class="spinner"></span><b id="agMsg">Lendo o seu roteiro…</b></div>`;
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  let j; try { j = await agentePost({ texto, hist: A.hist }); } catch (e) { box.innerHTML = `<div class="banner red" style="box-shadow:none">${ic('alert')}<div>${esc(e.message)}</div></div>`; return; }
+  const lf = $('#agLeft'); if (lf && j.restam != null) lf.textContent = `Restam ${j.restam} para hoje.`;
+  if (!j.entendeu || (j.pergunta && (j.pontos || []).length < 2)) { A.q = j.pergunta || 'Não entendi bem. De onde você sai e para onde vai?'; A.hist.push({ t: texto, q: A.q }); return renderAgQ(); }
+  A.q = ''; A.res = j;
+  const pts = (j.pontos || []).slice(0, 25);
+  A.pts = await geocodePts(pts, myPos, (i, n) => { const m = $('#agMsg'); if (m) m.textContent = `Achando os lugares no mapa: ${i} de ${n}…`; });
+  renderAgRes();
+}
+function renderAgQ() {
+  const A = UI.ag, box = $('#agRes');
+  box.innerHTML = `<div class="card step-card"><div class="ag-q">${ic('chat')}<b>${esc(A.q)}</b></div>
+   <input class="input" id="agAns" placeholder="Sua resposta"><button class="btn primary btn-wide" type="button" id="agAnsGo">Responder</button></div>`;
+  $('#agAns').focus();
+  const go = () => { const v = $('#agAns').value.trim(); if (v) agenteRun(v); };
+  $('#agAnsGo').onclick = go; $('#agAns').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+function renderAgRes() {
+  const A = UI.ag, j = A.res, box = $('#agRes'); if (!box || !A.pts) return;
+  const cls = (j.classicas || []).map(id => CLASSICAS.find(c => c.id === id)).filter(Boolean);
+  const ok = A.pts.filter(p => p.lat != null);
+  box.innerHTML = `<section class="card step-card">
+   <div class="step-h"><span class="step-n">${ic('check')}</span><h2>Entendi assim</h2></div>
+   <p style="margin:0">${esc(j.resumo || '')}</p>
+   <div class="ag-pts">${A.pts.map((p, i) => `<div class="ag-pt${p.lat == null ? ' miss' : ''}">
+     <span class="ag-ic">${ic((STOPTYPES[p.tipo] || STOPTYPES.parada).icon)}</span>
+     <div class="grow"><b>${esc(p.lat == null ? p.lugar : p.name)}</b><span>${p.lat == null ? 'Não achei no mapa. Toque em Trocar e escreva de outro jeito.' : esc(p.display)}${p.dia ? ' · Dia ' + p.dia : ''} · ${esc((STOPTYPES[p.tipo] || STOPTYPES.parada).n)}</span></div>
+     <button class="btn small" type="button" data-agfix="${i}">Trocar</button><button class="iconbtn" type="button" data-agdel="${i}" aria-label="Tirar">${ic('x')}</button></div>`).join('')}</div>
+   ${cls.length ? `<div><div class="eyebrow">Estradas que você pediu</div><div class="ropt-cls">${cls.map(c => `<span class="pill amber">${ic('star')}${esc(c.n)}</span>`).join('')}</div></div>` : ''}
+   <div class="row"><div class="field"><label for="agDate">Saída</label><input class="input" id="agDate" type="date" value="${esc(j.data || '')}"></div><div class="field"><label for="agTime">Horário</label><input class="input" id="agTime" type="time" value="${esc(j.hora || '07:00')}"></div></div>
+   <div class="ropt-cls">${j.terra === false ? '<span class="pill">Só asfalto</span>' : j.terra ? '<span class="pill amber">Pode ter terra</span>' : ''}${j.curvas ? '<span class="pill amber">Quer curvas</span>' : ''}${j.evitar_pedagio ? '<span class="pill">Evitar pedágio</span>' : ''}${j.km_dia ? `<span class="pill">${j.km_dia} km/dia</span>` : ''}</div>
+   <button class="btn primary btn-wide start-btn" type="button" id="agRoute" ${ok.length < 2 ? 'disabled' : ''}>${ic('route')}Ver os caminhos e salvar</button>
+   <p class="note" style="margin:0">Algo errado? Corrija aqui, ou mude o texto lá em cima e toque em “Montar roteiro” de novo.</p>
+  </section>`;
+  box.querySelectorAll('[data-agdel]').forEach(b => b.onclick = () => { A.pts.splice(+b.dataset.agdel, 1); renderAgRes(); });
+  box.querySelectorAll('[data-agfix]').forEach(b => b.onclick = () => agFix(+b.dataset.agfix));
+  $('#agDate').onchange = e => { j.data = e.target.value; }; $('#agTime').onchange = e => { j.hora = e.target.value; };
+  $('#agRoute').onclick = () => {
+    const pts = A.pts.filter(p => p.lat != null);
+    if (j.terra != null) { UI.terra = !!j.terra; store.set('mb-terra', UI.terra); }
+    openRouteOptions({ points: pts, via: j.classicas || [], title: 'Por onde você quer ir?', hint: j.curvas ? 'Você pediu curvas: veja a opção Passeio.' : '', onPick: (o, added) => {
+      const RR = GEO.build(o.coords), km = p => GEO.project(RR, p.lat, p.lng).km;
+      let stops = pts.map((p, i) => ({ id: uid(), name: p.name, lat: p.lat, lng: p.lng, type: i === 0 ? 'saida' : (STOPTYPES[p.tipo] ? p.tipo : 'parada'), note: p.dia ? `Dia ${p.dia}` : '' }));
+      const fresh = added.filter(a => !stops.some(st => GEO.hav(st, a) < 2)).map(a => ({ id: uid(), name: a.name, lat: a.lat, lng: a.lng, type: 'foto', note: 'Estrada clássica' }));
+      if (fresh.length) { const mid = [...stops.slice(1, -1), ...fresh].sort((x, y) => km(x) - km(y)); stops = [stops[0], ...mid, stops[stops.length - 1]]; }
+      const r = routeOf(o);
+      UI.draftNext = true; UI.afterCreate = true;
+      send({ t: 'create', trip: { name: (j.nome || `${stops[0].name} → ${stops[stops.length - 1].name}`).slice(0, 60), date: j.data || '', startTime: j.hora || '07:00', mode: 'solo', stops: stops.slice(0, 100), route: { coords: GEO.thin(r.coords, 0.12).slice(0, 6000), dist_km: r.dist_km, dur_min: r.dur_min, label: r.label, via: r.via } }, member: memberPayload('guia') });
+      UI.ag = null; toast('Viagem montada! Confira e salve em Minhas viagens.', 5000);
+    } });
+  };
+}
+function agFix(i) {
+  const A = UI.ag, p = A.pts[i];
+  $('#modalRoot').innerHTML = `<div class="overlay" id="ov"><div class="modal" role="dialog" aria-label="Trocar lugar">
+   <div class="sec-h"><h2>Trocar lugar</h2><button class="iconbtn" type="button" id="afX" aria-label="Fechar">${ic('x')}</button></div>
+   ${(p.alts || []).length > 1 ? `<div class="eyebrow">Era um destes?</div><div class="results">${p.alts.map((r, k) => `<button type="button" data-alt="${k}">${esc(r.name)}<small>${esc(r.display)}</small></button>`).join('')}</div>` : ''}
+   <form id="afForm" class="row"><div class="field"><label for="afQ">Ou escreva o lugar</label><input class="input" id="afQ" value="${esc(p.lugar)}"></div><button class="btn primary" type="submit">${ic('search')}</button></form>
+   <div id="afRes" class="results"></div></div></div>`;
+  const pick = r => { Object.assign(p, { name: r.name, display: r.display, lat: r.lat, lng: r.lng }); $('#modalRoot').innerHTML = ''; renderAgRes(); };
+  $('#afX').onclick = () => $('#modalRoot').innerHTML = ''; $('#ov').onclick = e => { if (e.target.id === 'ov') $('#modalRoot').innerHTML = ''; };
+  document.querySelectorAll('[data-alt]').forEach(b => b.onclick = () => pick(p.alts[+b.dataset.alt]));
+  $('#afForm').onsubmit = async e => { e.preventDefault(); const box = $('#afRes'); box.innerHTML = '<p class="empty"><span class="spinner"></span> Buscando…</p>';
+    let res = []; try { res = await GEO.search($('#afQ').value.trim(), null, true); } catch (x) {}
+    box.innerHTML = res.length ? res.map((r, k) => `<button type="button" data-r="${k}">${esc(r.name)}<small>${esc(r.display)}</small></button>`).join('') : '<p class="empty">Nada encontrado. Tente com cidade e estado.</p>';
+    box.querySelectorAll('[data-r]').forEach(b => b.onclick = () => pick(res[+b.dataset.r])); };
+}
+// dentro da viagem do guia: incluir paradas escrevendo
+function agenteAddStops() {
+  $('#modalRoot').innerHTML = `<div class="overlay" id="ov"><div class="modal" role="dialog" aria-label="Adicionar paradas por texto">
+   <div class="sec-h"><h2>Adicionar paradas</h2><button class="iconbtn" type="button" id="aaX" aria-label="Fechar">${ic('x')}</button></div>
+   <p class="muted" style="margin:0">Escreva ou fale o que quer mudar. Ex.: “almoçar em Cunha e parar no mirante do Pico do Itapeva antes de chegar”.</p>
+   <textarea class="input ag-text" id="aaTxt" rows="4" maxlength="1000"></textarea>
+   <button class="btn primary btn-wide" type="button" id="aaGo">${ic('route')}Incluir no roteiro</button><div id="aaRes"></div></div></div>`;
+  $('#aaX').onclick = () => $('#modalRoot').innerHTML = '';
+  $('#aaGo').onclick = async () => {
+    const txt = $('#aaTxt').value.trim(), box = $('#aaRes'); if (txt.length < 4) return;
+    const old = ROOM.trip.stops; box.innerHTML = '<p class="empty"><span class="spinner"></span> Lendo…</p>';
+    let j; try { j = await agentePost({ texto: txt, modo: 'adicionar', existentes: old.map(s => s.name) }); } catch (e) { box.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+    const list = (j.pontos || []).slice(0, 40);
+    const novos = list.filter(p => !(Number.isInteger(p.existente) && old[p.existente]));
+    if (!novos.length) { box.innerHTML = `<p class="empty">${esc(j.pergunta || 'Não achei paradas novas nesse texto.')}</p>`; return; }
+    const near = old.length ? old[old.length - 1] : myPos;
+    const found = await geocodePts(novos, near, (i, n) => { box.innerHTML = `<p class="empty"><span class="spinner"></span> Achando no mapa: ${i} de ${n}…</p>`; });
+    let k = 0; const stops = [];
+    list.forEach(p => { if (Number.isInteger(p.existente) && old[p.existente]) { if (!stops.includes(old[p.existente])) stops.push(old[p.existente]); } else { const f = found[k++]; if (f && f.lat != null && !stops.concat(old).some(s => GEO.hav(s, f) < 2)) stops.push({ id: uid(), name: f.name, lat: f.lat, lng: f.lng, type: STOPTYPES[f.tipo] ? f.tipo : 'parada', note: '' }); } });
+    old.forEach(s => { if (!stops.includes(s)) stops.push(s); }); // nada some sem querer
+    const miss = found.filter(f => f.lat == null).map(f => f.lugar);
+    box.innerHTML = `<div class="eyebrow" style="margin-top:8px">Novo roteiro</div><ol class="ag-new">${stops.map(s => `<li class="${old.includes(s) ? '' : 'novo'}">${esc(s.name)}${old.includes(s) ? '' : ' <span class="pill green">novo</span>'}</li>`).join('')}</ol>
+     ${miss.length ? `<p class="note">Não achei no mapa: ${esc(miss.join(', '))}.</p>` : ''}
+     <button class="btn primary btn-wide" type="button" id="aaOk">${ic('check')}Confirmar</button>`;
+    $('#aaOk').onclick = () => { $('#modalRoot').innerHTML = ''; ROOM.trip.stops = stops; patchTrip({ stops }); recalcRoute(stops); toast('Paradas incluídas. Recalculando o caminho…'); };
+  };
 }
 
 /* ================= ESTRADAS CLÁSSICAS ================= */
