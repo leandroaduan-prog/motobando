@@ -109,6 +109,7 @@ async function nearOSM(cat, lat, lng, rk) {
 }
 // criador de viagens automáticas + lugares com notas do Google (quando houver GOOGLE_PLACES_KEY)
 const planner = require('./plan')(app, { nominatim, nearOSM, overpassQuery, DATA_DIR });
+require('./agente')(app, { DATA_DIR });
 app.get('/api/near', async (req, res) => {
   const cat = String(req.query.cat || ''); const lat = +req.query.lat, lng = +req.query.lng;
   const rk = Math.max(1, Math.min(30, +req.query.r || 10));
