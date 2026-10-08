@@ -96,7 +96,8 @@ module.exports = function setupPlanner(app, { nominatim, nearOSM, overpassQuery,
     const step = (pct, msg) => { job.progress = pct; job.msg = msg; };
     step(5, 'Traçando a rota');
     const pts = [inp.origin, ...(inp.via || []), inp.dest];
-    const rt = await osrm(pts);
+    const given = inp.route && Array.isArray(inp.route.coords) ? inp.route.coords.map(c => [+c[0], +c[1]]).filter(c => Number.isFinite(c[0]) && Number.isFinite(c[1])).slice(0, 8000) : null;
+    const rt = given && given.length > 1 && +inp.route.dist_km > 0 && +inp.route.dur_min > 0 ? { coords: given, dist_km: +inp.route.dist_km, dur_min: +inp.route.dur_min } : await osrm(pts);
     const R = build(rt.coords);
     const total = R.total;
     const daily = Math.max(80, Math.min(1200, +inp.dailyKm || 350));
