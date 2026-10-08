@@ -528,6 +528,7 @@ function showHome() {
    <details class="card"><summary style="font-weight:700;cursor:pointer;min-height:36px">Carregar viagens de exemplo</summary>
     <p class="note">Rotas clássicas de moto já montadas, uma por mês. Servem para ver como fica a pasta e para usar como modelo.</p>
     <div style="display:flex;flex-direction:column;gap:10px"><button class="btn btn-wide" type="button" id="ex15">${ic('users')}Guia: 15 viagens em grupo no ano</button><button class="btn btn-wide" type="button" id="ex10">${ic('helmet')}Solo: 10 viagens no ano</button></div></details>
+   <button class="btn btn-wide" type="button" id="homeCls">${ic('star')}Estradas clássicas da América do Sul</button>
    <button class="btn btn-wide" type="button" id="homeBorders">${ic('book')}Guia de fronteiras</button>
    ${needProfile ? '' : personalCodeHTML()}
    <p class="legal">Mapa © colaboradores do OpenStreetMap. Rotas: OSRM. Previsão do tempo: Open-Meteo.</p>`}
@@ -544,6 +545,7 @@ function showHome() {
   bindPersonalCode();
   const na = $('#newAuto'); if (na) na.onclick = showPlanner;
   const gb = $('#homeBorders'); if (gb) gb.onclick = showBorders;
+  const hcl = $('#homeCls'); if (hcl) hcl.onclick = () => showClassicas();
   const e15 = $('#ex15'); if (e15) e15.onclick = () => loadExamples('grupo', 15, 24);
   const e10 = $('#ex10'); if (e10) e10.onclick = () => loadExamples('solo', 10, 35);
   const ns = $('#newSolo'); if (ns) ns.onclick = () => createTrip('solo');
@@ -650,7 +652,7 @@ function enterRoom() {
   $('#v-home').hidden = true; $('#v-plan').hidden = true; $('#tabs').hidden = false;
   initMap(); startGPS(); keepAwake(true);
   if (UI.afterCreate) { UI.afterCreate = false; go('viagem'); } else go(UI.tab || 'mapa');
-  setTimeout(() => { if (ROOM && isGuide() && ROOM.trip.stops.length >= 2 && !ROOM.trip.route && !routing) { toast('Calculando a rota desta viagem…'); recalcRoute(); } }, 800);
+  setTimeout(() => { if (ROOM && isGuide() && ROOM.trip.stops.length >= 2 && !ROOM.trip.route && !routing) { toast('Calculando a rota desta viagem…'); recalcRoute(); } else if (ROOM && isGuide() && ROOM.trip.route && ROOM.trip.route.coords && !(ROOM.trip.postos || []).length && !routing) applyRoute(ROOM.trip.route); }, 800);
 }
 function refresh() {
   if (!ROOM) return;
@@ -692,14 +694,19 @@ async function recalcRoute(stops) {
   routing = true; if (UI.tab === 'viagem') renderViagem();
   try {
     const r = await GEO.route(stops);
-    ROOM.trip.route = r; _Rkey = ''; // local imediato
-    patchTrip({ route: r });
-    toast(`Rota pronta: ${f0(r.dist_km)} km. Procurando postos no caminho…`);
-    const R = routeModel();
-    try { const postos = await GEO.postosAlongRoute(R); ROOM.trip.postos = postos; patchTrip({ postos }); toast(postos.length === 1 ? '1 posto encontrado na rota' : `${postos.length} postos encontrados na rota`); }
-    catch (e) { toast('Rota pronta, mas não consegui buscar os postos agora. Tente “Atualizar postos” depois.'); }
+    await applyRoute({ ...r, label: 'Rápida', via: '' });
   } catch (e) { toast('Não consegui calcular a rota agora: ' + esc(e.message)); }
   routing = false; UI.fitted = false; if (UI.tab === 'viagem') renderViagem();
+}
+// grava a rota escolhida (e paradas novas, se vieram junto) e busca os postos do caminho
+async function applyRoute(r, stops) {
+  ROOM.trip.route = r; _Rkey = '';
+  if (stops) { ROOM.trip.stops = stops; patchTrip({ stops, route: r }); } else patchTrip({ route: r });
+  toast(`Caminho pronto: ${f0(r.dist_km)} km. Procurando postos…`);
+  const R = routeModel();
+  try { const postos = await GEO.postosAlongRoute(R); ROOM.trip.postos = postos; patchTrip({ postos }); toast(postos.length === 1 ? '1 posto encontrado no caminho' : `${postos.length} postos encontrados no caminho`); }
+  catch (e) { toast('Caminho pronto, mas não consegui buscar os postos agora. Tente “Recalcular” depois.'); }
+  UI.fitted = false; if (UI.tab === 'viagem') renderViagem(); if (UI.tab === 'mapa') drawRoute();
 }
 
 /* ================= VIAGEM ================= */
@@ -743,6 +750,7 @@ function renderViagem() {
   <section style="display:flex;flex-direction:column;gap:10px">
    <div class="sec-h"><h2>Roteiro e paradas</h2>${G ? '<span class="pill green">Você edita</span>' : '<span class="pill">Definido pelo guia</span>'}</div>
    ${routing ? `<div class="banner" style="box-shadow:none"><span class="spinner"></span><div>Calculando a rota e procurando postos…</div></div>` : ''}
+   ${ROOM.trip.route && R ? `<div class="route-chosen">${ic('route')}<div><small>Caminho escolhido</small><b>${esc(ROOM.trip.route.label || 'Rápida')} · ${f0(R.total)} km</b>${ROOM.trip.route.via ? `<span>via ${esc(ROOM.trip.route.via)}</span>` : ''}</div></div>` : ''}
    ${wet.length ? `<div class="banner blue" style="box-shadow:none">${ic('rain')}<div><b>Chuva provável na rota:</b> ${wet.slice(0, 3).map(w => `km ${f0(w.km)} (${w.prob}%, ${hhmm(w.when)})`).join(', ')}.</div></div>` : ''}
    <div class="card">
     ${st.length ? `<ol class="timeline">${items.map(it => {
@@ -756,7 +764,8 @@ function renderViagem() {
       <form id="searchForm" class="row"><div class="field"><label for="sQ">${st.length ? 'Adicionar parada' : 'Ponto de saída'}</label><input class="input" id="sQ" placeholder="Ex.: Monte Verde MG, Pico Agudo…" required></div><button class="btn primary" type="submit">${ic('search')}Buscar</button></form>
       <div id="searchRes" class="results"></div>
       <div class="row"><button class="btn" type="button" id="pickMap" style="flex:1">${ic('pin')}Tocar no mapa</button><button class="btn" type="button" id="useMe" style="flex:1">${ic('gps')}Minha localização</button></div>
-      ${st.length >= 2 ? `<button class="btn ghost" type="button" id="reroute">${ic('refresh')}Recalcular rota e postos</button>` : ''}
+      ${st.length >= 2 ? `<button class="btn primary" type="button" id="routeOpts">${ic('route')}Escolher o caminho: rápido, alternativo ou passeio</button>
+      <button class="btn ghost" type="button" id="reroute">${ic('refresh')}Recalcular rota e postos</button>` : ''}
     </div>` : ''}
    </div>
   </section>
@@ -847,6 +856,16 @@ function renderViagem() {
   const pm = $('#pickMap'); if (pm) pm.onclick = () => { UI.picking = true; go('mapa'); $('#map').classList.add('picking'); updateMapOverlays(); };
   const um = $('#useMe'); if (um) um.onclick = async () => { if (!myPos) return toast('Ainda sem GPS. Permita a localização.'); addStop({ name: await GEO.reverse(myPos.lat, myPos.lng), lat: myPos.lat, lng: myPos.lng }); };
   const rr = $('#reroute'); if (rr) rr.onclick = () => recalcRoute();
+  const ro = $('#routeOpts'); if (ro) ro.onclick = () => openRouteOptions({ points: ROOM.trip.stops, onPick: (o, added) => {
+    let stops = null;
+    if (added.length) {
+      const RR = GEO.build(o.coords), km = p => GEO.project(RR, p.lat, p.lng).km;
+      const fresh = added.filter(a => !ROOM.trip.stops.some(st => GEO.hav(st, a) < 2));
+      const mid = [...ROOM.trip.stops.slice(1, -1), ...fresh.map(a => ({ id: uid(), name: a.name, lat: a.lat, lng: a.lng, type: 'foto', note: 'Estrada clássica' }))].sort((x, y) => km(x) - km(y));
+      stops = [ROOM.trip.stops[0], ...mid, ROOM.trip.stops[ROOM.trip.stops.length - 1]];
+    }
+    applyRoute(routeOf(o), stops);
+  } });
   const move = (id, dir) => { const s = [...ROOM.trip.stops]; const i = s.findIndex(x => x.id === id), j = i + dir; if (j < 0 || j >= s.length) return; [s[i], s[j]] = [s[j], s[i]]; ROOM.trip.stops = s; patchTrip({ stops: s }); recalcRoute(s); };
   v.querySelectorAll('[data-up]').forEach(b => b.onclick = () => move(b.dataset.up, -1));
   v.querySelectorAll('[data-down]').forEach(b => b.onclick = () => move(b.dataset.down, 1));
@@ -1169,13 +1188,17 @@ async function showPlanner() {
   $('#pfBorders').onclick = () => showBorders();
   $('#pfGo').onclick = runPlan;
 }
-async function runPlan() {
+function runPlan() {
   const pf = UI.pf;
   if (!pf.origin || !pf.dest) return toast('Escolha de onde sai e para onde vai');
+  openRouteOptions({ points: [pf.origin, ...(pf.via ? [pf.via] : []), pf.dest], title: 'Por onde você quer ir?', onPick: o => runPlanWith(routeOf(o)) });
+}
+async function runPlanWith(route) {
+  const pf = UI.pf;
   const spec = FUEL.motoSpec(ME.moto);
   let r;
   try {
-    r = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: ME.id, code: ME.premiumCode || '', origin: pf.origin, dest: pf.dest, via: pf.via ? [pf.via] : [], dailyKm: pf.daily, startDate: pf.date, startTime: pf.time, prefs: { turismo: pf.turismo, offroad: pf.offroad }, moto: { tanque: spec.tanque, kml: +ME.moto.real || spec.kml }, fuelPrice: pf.preco }) });
+    r = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: ME.id, code: ME.premiumCode || '', origin: pf.origin, dest: pf.dest, via: pf.via ? [pf.via] : [], route: { coords: GEO.thin(route.coords, 0.25), dist_km: route.dist_km, dur_min: route.dur_min }, dailyKm: pf.daily, startDate: pf.date, startTime: pf.time, prefs: { turismo: pf.turismo, offroad: pf.offroad }, moto: { tanque: spec.tanque, kml: +ME.moto.real || spec.kml }, fuelPrice: pf.preco }) });
   } catch (e) { return toast('Sem conexão com o servidor'); }
   const j = await r.json();
   if (r.status === 402) { openPremium(j.msg); return; }
@@ -1187,7 +1210,7 @@ async function runPlan() {
     await new Promise(res => setTimeout(res, 1500));
     let s; try { s = await fetch('/api/plan/' + id).then(x => x.json()); } catch (e) { continue; }
     if ($('#plMsg')) { $('#plMsg').textContent = s.msg || ''; $('#plBar').style.width = (s.progress || 2) + '%'; }
-    if (s.status === 'done') { UI.plan = s.result; UI.planTier = 'custo'; return renderPlanResult(); }
+    if (s.status === 'done') { UI.plan = s.result; UI.plan.route = route; UI.planTier = 'custo'; return renderPlanResult(); }
     if (s.status === 'error') { toast(esc(s.error)); UI.plan = null; return showPlanner(); }
   }
   toast('Demorou demais. Tente de novo.'); showPlanner();
@@ -1213,6 +1236,7 @@ function renderPlanResult() {
    <button class="btn btn-wide" type="button" id="plBack2">${ic('x')}Descartar e voltar</button>
    <div class="sign"><div class="eyebrow">Sua viagem automática</div><h1>${esc(P.origin.name)} → ${esc(P.dest.name)}</h1>
     <div class="sign-row"><span><b class="num">${f0(P.total_km)}</b> km</span><span><b>${P.days.length}</b> dia${P.days.length > 1 ? 's' : ''}</span><span><b class="num">${f1(P.ride_h)}</b> h pilotando</span><span>~<b class="num">${f0(P.fuel.liters)}</b> L</span></div></div>
+   ${P.route ? `<div class="route-chosen">${ic('route')}<div><small>Caminho escolhido</small><b>${esc(P.route.label || 'Rápida')}</b>${P.route.via ? `<span>via ${esc(P.route.via)}</span>` : ''}</div></div>` : ''}
    ${!P.google ? `<div class="banner" style="box-shadow:none">${ic('star')}<div>Sem as notas do Google ligadas, escolhi os lugares pelos dados do OpenStreetMap. Com a chave do Google, as escolhas usam as avaliações reais.</div></div>` : ''}
    <section style="display:flex;flex-direction:column;gap:10px"><div class="sec-h"><h2>Escolha o estilo</h2></div>
     <div class="tier-grid">${Object.entries(TIERS).map(([k, t]) => `<button type="button" class="tier ${T === k ? 'on' : ''}" data-tier="${k}"><b>${t.n}</b><span class="tier-total num">${brl(P.tiers[k].total).replace(/,\d\d$/, '')}</span><small>${t.d}</small><small class="num">Hospedagem ${brl(P.tiers[k].lodging).replace(/,\d\d$/, '')} · Comida ${brl(P.tiers[k].food).replace(/,\d\d$/, '')} · Gasolina ${brl(P.tiers[k].fuel).replace(/,\d\d$/, '')}</small></button>`).join('')}</div>
@@ -1253,7 +1277,7 @@ function savePlan() {
     if (L) stops.push({ id: uid(), name: L.name, lat: L.lat, lng: L.lng, type: 'pernoite', note: `Dia ${d.n}${L.rating ? ' · ★' + f1(L.rating) : ''}` });
     else if (di === P.days.length - 1) stops.push({ id: uid(), name: P.dest.name, lat: P.dest.lat, lng: P.dest.lng, type: 'pernoite', note: 'Destino' });
   });
-  UI.draftNext = true; send({ t: 'create', trip: { name: `${P.origin.name} → ${P.dest.name}`, date: P.days[0].date, startTime: UI.pf.time, mode: 'solo', stops: stops.slice(0, 100) }, member: memberPayload('guia') });
+  UI.draftNext = true; send({ t: 'create', trip: { name: `${P.origin.name} → ${P.dest.name}`, date: P.days[0].date, startTime: UI.pf.time, mode: 'solo', stops: stops.slice(0, 100), route: P.route ? { coords: GEO.thin(P.route.coords, 0.12).slice(0, 6000), dist_km: P.route.dist_km, dur_min: P.route.dur_min, label: P.route.label, via: P.route.via } : null }, member: memberPayload('guia') });
   UI.afterCreate = true; UI.plan = null; toast('Viagem salva na sua pasta. Se for em grupo, ligue a chave e mande o convite.', 6000);
 }
 function showBorders() {
@@ -1312,6 +1336,7 @@ window.addEventListener('popstate', e => {
     else if (id === 'plan') { UI.plan = null; showPlanner(); }
     else if (id === 'planres' && UI.plan) renderPlanResult();
     else if (id === 'borders') showBorders();
+    else if (id === 'classicas') showClassicas();
     else { if (needExitPrompt()) { const tid = 'trip:' + (UI.tab || 'viagem'); setTimeout(() => { history.pushState({ mb: tid }, ''); NAV = tid; exitTripPrompt(); }, 0); } else if (ROOM) goHome(); else showHome(); }
   } finally { navFromPop = false; NAV = id; }
 });
@@ -1549,6 +1574,108 @@ function openContact() {
       closeModal(); toast('Mensagem enviada! Obrigado pelo contato.', 5000);
     } catch (x) { btn.disabled = false; toast('Sem conexão. Tente de novo.'); }
   };
+}
+
+/* ================= OPÇÕES DE CAMINHO ================= */
+UI.terra = store.get('mb-terra', false);
+const routeOf = o => ({ coords: o.coords, dist_km: o.dist_km, dur_min: o.dur_min, label: o.t, via: (o.diff || []).map(r => r.n).join(' · ') });
+const ROPT_IC = { rapida: 'route', alternativa: 'route', alternativa2: 'route', passeio: 'star' };
+const dots = n => `<span class="dots">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('')}</span>`;
+const durTxt = m => m >= 60 ? `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}` : `${Math.round(m)} min`;
+function withClassics(points, ids, base) {
+  if (!ids.length || !base) return points;
+  const R = GEO.build(base), km = p => GEO.project(R, +p.lat, +p.lng).km;
+  const mid = points.slice(1, -1).map(p => ({ p, k: km(p) }));
+  ids.forEach(id => { const c = CLASSICAS.find(x => x.id === id); if (!c) return; const A = { lat: c.a[0], lng: c.a[1], name: c.a[2] + ' · ' + c.n }, B = { lat: c.b[0], lng: c.b[1], name: c.b[2] + ' · ' + c.n }; const ka = km(A), kb = km(B); mid.push({ p: ka <= kb ? A : B, k: Math.min(ka, kb) }, { p: ka <= kb ? B : A, k: Math.max(ka, kb) + 0.01 }); });
+  mid.sort((x, y) => x.k - y.k);
+  const ends = [points[0], points[points.length - 1]].map(p => ({ lat: +p.lat, lng: +p.lng }));
+  return [points[0], ...mid.map(x => x.p).filter(p => !ends.some(e => GEO.hav(e, { lat: +p.lat, lng: +p.lng }) < 2)), points[points.length - 1]];
+}
+function openRouteOptions(cfg) {
+  const S = { via: [], opts: null, base: null, busy: true, err: '' };
+  const added = () => S.via.flatMap(id => { const c = CLASSICAS.find(x => x.id === id); return c ? [{ lat: c.a[0], lng: c.a[1], name: c.a[2] + ' · ' + c.n }, { lat: c.b[0], lng: c.b[1], name: c.b[2] + ' · ' + c.n }] : []; });
+  const card = (o, i) => {
+    const f = S.opts[0], extra = o === f ? '' : `<span class="ropt-diff">${o.dist_km - f.dist_km >= 0 ? '+' : ''}${f0(o.dist_km - f.dist_km)} km · ${o.dur_min - f.dur_min >= 0 ? '+' : '−'}${durTxt(Math.abs(o.dur_min - f.dur_min))}</span>`;
+    const cls = (o.classics || []).map(id => CLASSICAS.find(c => c.id === id)).filter(Boolean);
+    return `<div class="ropt ropt-${o.key}">
+     <div class="ropt-h"><span class="ropt-t">${ic(ROPT_IC[o.key] || 'route')}${esc(o.t)}</span><span class="ropt-num"><b class="num">${f0(o.dist_km)} km</b> · ${durTxt(o.dur_min)}</span></div>
+     ${extra}
+     ${o.diff && o.diff.length ? `<div class="ropt-via">via ${o.diff.map(r => esc(r.n)).join(' · ')}</div>` : ''}
+     ${cls.length ? `<div class="ropt-cls">${cls.map(c => `<span class="pill amber">${ic('star')}${esc(c.n)}</span>`).join('')}</div>` : ''}
+     <div class="ropt-stats">
+      <span><small>Curvas</small><span class="dotrow">${dots(o.curv.lvl)}<em>~${o.curv.km} km</em></span></span>
+      <span><small>Serra</small>${o.elev ? `sobe ${f0(o.elev.up)} m · até ${f0(o.elev.max)} m` : '<em>calculando…</em>'}</span>
+      <span><small>Pedágio</small>${o.toll ? 'Tem' : 'Não tem'}</span>
+      ${UI.terra ? `<span><small>Terra</small>${o.dirt == null ? '<em>calculando…</em>' : o.dirt ? `~${o.dirt} km` : 'Só asfalto'}</span>` : ''}
+     </div>
+     ${o.curv.best ? `<div class="note" style="margin:0">Trecho mais sinuoso: do km ${o.curv.best.from} ao ${o.curv.best.to}.</div>` : ''}
+     <button class="btn ${o.key === 'passeio' ? 'amber-btn' : 'primary'} btn-wide" type="button" data-ropt="${i}">Ir por este caminho</button>
+    </div>`;
+  };
+  const draw = () => {
+    const box = $('#roptBody'); if (!box) return;
+    const near = S.base ? GEO.classicsNear(S.base, S.opts ? S.opts.flatMap(o => o.classics || []).filter(id => !S.via.includes(id)) : [], 6) : [];
+    const keep = box.scrollTop;
+    box.innerHTML = `
+     <div class="seg seg-terra" role="group" aria-label="Terra"><button type="button" data-terra="0" aria-pressed="${!UI.terra}">Só asfalto</button><button type="button" data-terra="1" aria-pressed="${UI.terra}">Pode ter terra</button></div>
+     ${S.busy ? `<div class="card" style="display:flex;gap:12px;align-items:center"><span class="spinner"></span><div>Procurando caminhos para moto…<div class="note">Rápido, alternativo e passeio com curvas.</div></div></div>` : ''}
+     ${S.err ? `<div class="banner red" style="box-shadow:none">${ic('alert')}<div>${esc(S.err)}</div></div>` : ''}
+     ${S.opts ? S.opts.map(card).join('') : ''}
+     ${S.opts && S.opts.length === 1 ? `<p class="note" style="margin:0">Só encontrei um bom caminho aqui. Inclua uma estrada clássica abaixo para variar.</p>` : ''}
+     ${near.length || S.via.length ? `<div class="eyebrow" style="margin-top:6px">Estradas clássicas perto do caminho</div>
+      ${S.via.map(id => { const c = CLASSICAS.find(x => x.id === id); return `<div class="cls-item on"><div class="grow"><b>${esc(c.n)}</b><span>Incluída no caminho</span></div><button class="btn small" type="button" data-unvia="${c.id}">Tirar</button></div>`; }).join('')}
+      ${near.map(({ c, off }) => `<div class="cls-item${c.fechada ? ' closed' : ''}"><div class="grow"><b>${esc(c.n)}</b><span>${esc(CLASSICA_TIPO[c.tipo] || '')} · ${esc(CLASSICA_PISO[c.piso] || '')} · ${f0(c.km)} km${off > 2 ? ` · a ${f0(off)} km do caminho` : ''}</span><span class="note">${esc(c.d)}</span>${c.alerta ? `<span class="cls-alert">${ic('alert')}${esc(c.alerta)}</span>` : ''}</div>${c.fechada || c.semRota ? '' : `<button class="btn small" type="button" data-via="${c.id}">${ic('plus')}Incluir</button>`}</div>`).join('')}` : ''}`;
+    box.scrollTop = keep;
+    box.querySelectorAll('[data-terra]').forEach(b => b.onclick = () => { const v = b.dataset.terra === '1'; if (v === UI.terra) return; UI.terra = v; store.set('mb-terra', v); load(); });
+    box.querySelectorAll('[data-ropt]').forEach(b => b.onclick = () => { const o = S.opts[+b.dataset.ropt]; $('#modalRoot').innerHTML = ''; cfg.onPick(o, added()); });
+    box.querySelectorAll('[data-via]').forEach(b => b.onclick = () => { S.via.push(b.dataset.via); load(); });
+    box.querySelectorAll('[data-unvia]').forEach(b => b.onclick = () => { S.via = S.via.filter(x => x !== b.dataset.unvia); load(); });
+  };
+  let gen = 0;
+  async function load() {
+    const my = ++gen; S.busy = true; S.err = ''; S.opts = null; draw();
+    try {
+      const opts = await GEO.routeOptions(withClassics(cfg.points, S.via, S.base), { terra: UI.terra });
+      if (my !== gen) return; S.opts = opts; if (!S.base) S.base = opts[0].coords;
+    } catch (e) { if (my === gen) S.err = 'Não consegui calcular os caminhos agora. Confira a internet e tente de novo.'; }
+    S.busy = false; draw();
+    (S.opts || []).forEach(async o => { o.elev = await GEO.elevation(o.coords); if (my === gen) draw(); if (UI.terra) { try { o.dirt = await GEO.dirtKm(o); } catch (x) { o.dirt = null; } if (my === gen) draw(); } });
+  }
+  $('#modalRoot').innerHTML = `<div class="overlay" id="ov"><div class="modal ropt-modal" role="dialog" aria-label="Escolher o caminho">
+   <div class="sec-h"><h2>${esc(cfg.title || 'Escolha o caminho')}</h2><button class="iconbtn" type="button" id="roX" aria-label="Fechar">${ic('x')}</button></div>
+   <div id="roptBody" class="ropt-body"></div></div></div>`;
+  $('#roX').onclick = () => { gen++; $('#modalRoot').innerHTML = ''; };
+  load();
+}
+
+/* ================= ESTRADAS CLÁSSICAS ================= */
+function showClassicas(filter) {
+  pushNav('classicas');
+  hideAllViews(); $('#v-plan').hidden = false; $('#tripTitle').textContent = 'Estradas clássicas'; $('#tripSub').textContent = 'América do Sul de moto';
+  UI.clsF = filter || UI.clsF || 'BR';
+  const paises = [...new Set(CLASSICAS.map(c => c.p.split('/')[0]))];
+  const list = CLASSICAS.filter(c => c.p.split('/').includes(UI.clsF));
+  $('#v-plan').innerHTML = `<div class="pad">
+   <div class="sign"><div class="eyebrow">Para quem gosta de estrada</div><h1>Estradas clássicas</h1><div class="sign-row"><span>${CLASSICAS.length} estradas famosas de moto. Toque em “Montar viagem” e o criador automático leva você até lá.</span></div></div>
+   <div class="chips" style="flex-wrap:wrap">${paises.map(p => `<button class="chip" type="button" data-cp="${p}" aria-pressed="${UI.clsF === p}">${esc(PAISES[p] || p)}</button>`).join('')}</div>
+   ${list.map(c => `<div class="card cls-card${c.fechada ? ' closed' : ''}">
+     <div class="eyebrow">${esc(c.uf)} · ${esc(CLASSICA_TIPO[c.tipo] || '')} · ${esc(CLASSICA_PISO[c.piso] || '')} · ${f0(c.km)} km</div>
+     <h3>${esc(c.n)}</h3><p class="muted" style="margin:0">${esc(c.d)}</p>
+     <p class="note" style="margin:0">${esc(c.a[2])} → ${esc(c.b[2])}</p>
+     ${c.alerta ? `<span class="cls-alert">${ic('alert')}${esc(c.alerta)}</span>` : ''}
+     <div class="row">${c.fechada ? '' : `<button class="btn primary" type="button" data-cgo="${c.id}" style="flex:1">${ic('route')}Montar viagem</button>`}<a class="btn" style="flex:1" href="https://www.google.com/maps/dir/?api=1&origin=${c.a[0]},${c.a[1]}&destination=${c.b[0]},${c.b[1]}&travelmode=driving" target="_blank" rel="noopener">${ic('map')}Ver no mapa</a></div>
+    </div>`).join('')}
+   <button class="btn ghost btn-wide" type="button" id="clsBack">Voltar para o início</button>
+  </div>`;
+  $('#v-plan').scrollTop = 0;
+  document.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => showClassicas(b.dataset.cp));
+  $('#clsBack').onclick = () => showHome();
+  document.querySelectorAll('[data-cgo]').forEach(b => b.onclick = () => {
+    const c = CLASSICAS.find(x => x.id === b.dataset.cgo);
+    UI.pf.via = { name: c.a[2], display: 'Começo da ' + c.n, lat: c.a[0], lng: c.a[1] };
+    UI.pf.dest = { name: c.b[2], display: 'Fim da ' + c.n, lat: c.b[0], lng: c.b[1] };
+    store.set('mb-planform', UI.pf); UI.plan = null; showPlanner(); toast('Escolha de onde você sai. A estrada já está no caminho.', 5000);
+  });
 }
 
 /* ================= INÍCIO ================= */

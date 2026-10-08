@@ -176,7 +176,117 @@ const GEO = (() => {
       return { km: kms[i], when, prob: k >= 0 ? f.hourly.precipitation_probability[k] : null, mm: k >= 0 ? f.hourly.precipitation[k] : null };
     });
   }
-  return { hav, build, project, pointAt, route, search, reverse, near, postosAlongRoute, rainAlong };
+
+  /* ---------- opções de rota para moto (Valhalla): rápida, alternativa e passeio ---------- */
+  const VALHALLA = 'https://valhalla1.openstreetmap.de';
+  function decode6(str) {
+    const out = []; let i = 0, lat = 0, lng = 0;
+    while (i < str.length) {
+      let b, sh = 0, r = 0; do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32); lat += (r & 1) ? ~(r >> 1) : (r >> 1);
+      sh = 0; r = 0; do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32); lng += (r & 1) ? ~(r >> 1) : (r >> 1);
+      out.push([lat / 1e6, lng / 1e6]);
+    }
+    return out;
+  }
+  const ROADY = /^(Rodovia|Rodoanel|Estrada|Ruta|Carretera|Camino|Autopista|Via |Rota|Serra|Paso|Cuesta|Panamericana|Interoce)/i, REF = /^(BR|SP|RJ|MG|PR|SC|RS|GO|MT|MS|BA|CE|ES|PE|TO|RN|RP|RN|Ruta|CO|PE|AR|CH)[- ]?\d/i;
+  const ROAD_ALIAS = { 'SP-098': 'Mogi-Bertioga', 'SP-021': 'Rodoanel', 'SP-150': 'Anchieta', 'SP-160': 'Imigrantes', 'SP-099': 'Tamoios', 'SP-055': 'Rio-Santos / Padre Manoel da Nóbrega', 'SP-070': 'Ayrton Senna', 'SP-065': 'Dom Pedro I', 'BR-381': 'Fernão Dias', 'BR-116': 'Dutra / Régis', 'SP-125': 'Oswaldo Cruz', 'SP-123': 'Campos do Jordão', 'SP-171': 'Paraty–Cunha', 'PR-410': 'Estrada da Graciosa', 'SC-390': 'Serra do Rio do Rastro', 'RS-486': 'Rota do Sol', 'MG-010': 'Serra do Cipó', 'BR-354': 'Garganta do Registro' };
+  function roadNames(pairs) {
+    const by = new Map();
+    pairs.forEach(([n, km], i) => { if (!(ROADY.test(n) || REF.test(n))) return; const o = by.get(n) || { n, km: 0, first: i }; o.km += km; by.set(n, o); });
+    let list = [...by.values()].filter(o => o.km >= 3);
+    // prefere o nome (Rodovia X) ao número quando os dois cobrem o mesmo trecho
+    list.sort((a, b) => a.first - b.first);
+    const names = new Set(list.map(o => o.n));
+    return list.filter(o => !(REF.test(o.n) && ROAD_ALIAS[o.n] && names.has('Rodovia ' + ROAD_ALIAS[o.n]))).map(o => ({ n: ROAD_ALIAS[o.n] ? `${ROAD_ALIAS[o.n]} (${o.n})` : o.n.replace(/^Rodovia /, 'Rod. '), km: Math.round(o.km) }));
+  }
+  async function valhalla(points, { highways = 1, terra = false, alternates = 0 } = {}) {
+    const body = {
+      locations: points.map(p => ({ lat: +p.lat, lon: +p.lng, type: 'break' })), costing: 'motorcycle',
+      costing_options: { motorcycle: { use_highways: highways, use_tolls: highways >= 0.9 ? 0.5 : 0.2, use_trails: terra ? 0.6 : 0, exclude_unpaved: !terra } },
+      units: 'kilometers', language: 'pt-BR', directions_type: 'maneuvers'
+    };
+    if (alternates && points.length === 2) body.alternates = alternates;
+    const d = await getJSON(VALHALLA + '/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 35000);
+    const trips = [d.trip, ...(d.alternates || []).map(a => a.trip)].filter(Boolean);
+    return trips.map(t => {
+      let coords = []; const pairs = [];
+      t.legs.forEach(l => { const c = decode6(l.shape); coords = coords.length ? coords.concat(c.slice(1)) : c; (l.maneuvers || []).forEach(m => (m.street_names || []).forEach(n => pairs.push([n, m.length || 0]))); });
+      return { coords: thin(coords), dist_km: Math.round(t.summary.length * 10) / 10, dur_min: Math.round(t.summary.time / 60), toll: !!t.summary.has_toll, ferry: !!t.summary.has_ferry, roads: roadNames(pairs), shapes: t.legs.map(l => l.shape) };
+    });
+  }
+  // curvas: quantos km da rota são de curva de verdade (janela de 1 km com mais de 140° de mudança de direção),
+  // ignorando 8 km de cada ponta para não contar as ruas da cidade
+  function curviness(coords) {
+    const R = build(coords); if (R.total < 2) return { km: 0, lvl: 1, best: null };
+    const step = 0.1, hd = []; for (let k = 0; k <= R.total; k += step) hd.push(pointAt(R, k)[2]);
+    const t = [0]; for (let i = 1; i < hd.length; i++) { let d = Math.abs(hd[i] - hd[i - 1]); if (d > 180) d = 360 - d; t.push(d < 3 ? 0 : d); }
+    const W = 10, skip = Math.min(Math.round(8 / step), Math.floor(t.length / 4)); let km = 0, run = 0, best = null, start = 0;
+    let s = 0; for (let j = 0; j < Math.min(W, t.length); j++) s += t[j];
+    for (let i = 0; i + W < t.length; i++) {
+      const curvy = i >= skip && i < t.length - skip && s >= 140;
+      if (curvy) { km += step; if (!run) start = i; run += step; if (!best || run > best.len) best = { from: start * step, len: run }; } else run = 0;
+      s += t[i + W] - t[i];
+    }
+    const share = km / R.total, lvl = share < 0.06 ? 1 : share < 0.12 ? 2 : share < 0.2 ? 3 : share < 0.32 ? 4 : 5;
+    return { km: Math.round(km), lvl, best: best && best.len >= 2 ? { from: Math.round(best.from), to: Math.round(best.from + best.len) } : null };
+  }
+  async function elevation(coords) {
+    try {
+      const R = build(coords), n = Math.min(100, Math.max(10, Math.round(R.total / 2)));
+      const pts = []; for (let i = 0; i < n; i++) pts.push(pointAt(R, R.total * i / (n - 1)));
+      const j = await getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${pts.map(p => p[0].toFixed(4)).join(',')}&longitude=${pts.map(p => p[1].toFixed(4)).join(',')}`, {}, 15000);
+      const e = (j.elevation || []).filter(Number.isFinite); if (e.length < 2) return null; let up = 0, down = 0; for (let i = 1; i < e.length; i++) { const d = e[i] - e[i - 1]; if (d > 0) up += d; else down -= d; }
+      return { up: Math.round(up), down: Math.round(down), max: Math.round(Math.max(...e)), min: Math.round(Math.min(...e)) };
+    } catch (x) { return null; }
+  }
+  async function dirtKm(opt) {
+    let km = 0;
+    for (const shape of opt.shapes || []) {
+      const d = await getJSON(VALHALLA + '/trace_attributes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ encoded_polyline: shape, shape_match: 'map_snap', costing: 'motorcycle', filters: { attributes: ['edge.surface', 'edge.length', 'edge.unpaved'], action: 'include' } }) }, 30000);
+      (d.edges || []).forEach(e => { if (e.unpaved || /dirt|gravel|compacted|path|impassable/.test(e.surface || '')) km += e.length || 0; });
+    }
+    return Math.round(km);
+  }
+  function sameRoute(a, b) {
+    if (Math.abs(a.dist_km - b.dist_km) / Math.max(a.dist_km, b.dist_km) > 0.04) return false;
+    const RB = build(b.coords), RA = build(a.coords); let near = 0, n = 0;
+    for (let k = RA.total * 0.05; k < RA.total * 0.95; k += RA.total / 25) { const p = pointAt(RA, k); const pr = project(RB, p[0], p[1]); n++; if (pr && pr.off < 0.6) near++; }
+    return n && near / n > 0.85;
+  }
+  function onRoute(R, c) { if (c.fechada || c.semRota) return false; const pa = project(R, c.a[0], c.a[1]), pb = project(R, c.b[0], c.b[1]); return pa && pb && pa.off < 6 && pb.off < 6 && Math.abs(pa.km - pb.km) > c.km * 0.4; }
+  async function routeOptions(points, { terra = false } = {}) {
+    const two = points.length === 2;
+    const [A, B] = await Promise.all([
+      valhalla(points, { highways: 1, terra, alternates: two ? 2 : 0 }).catch(() => []),
+      valhalla(points, { highways: 0.2, terra, alternates: two ? 1 : 0 }).catch(() => [])
+    ]);
+    let all = [...A, ...B];
+    if (!all.length) { const r = await route(points); return [{ ...r, key: 'rapida', t: 'Rápida', roads: [], curv: curviness(r.coords), src: 'osrm' }]; }
+    const uniq = []; all.forEach(o => { if (!uniq.some(u => sameRoute(u, o))) uniq.push(o); });
+    uniq.forEach(o => { o.curv = curviness(o.coords); });
+    uniq.sort((a, b) => a.dur_min - b.dur_min);
+    const fast = uniq[0]; fast.key = 'rapida'; fast.t = 'Rápida';
+    const rest = uniq.slice(1).filter(o => o.dur_min < fast.dur_min * 2.3);
+    const out = [fast];
+    const curvy = rest.filter(o => o.curv.km > fast.curv.km * 1.3 + 3).sort((a, b) => b.curv.km - a.curv.km)[0];
+    rest.filter(o => o !== curvy).sort((a, b) => a.dur_min - b.dur_min).slice(0, 2).forEach((o, i) => { o.key = i ? 'alternativa2' : 'alternativa'; o.t = i ? 'Outra alternativa' : 'Alternativa'; out.push(o); });
+    if (curvy) { curvy.key = 'passeio'; curvy.t = 'Passeio'; out.push(curvy); }
+    const fastNames = new Set(fast.roads.map(r => r.n));
+    out.forEach(o => {
+      o.diff = o === fast ? o.roads.slice().sort((a, b) => b.km - a.km).slice(0, 3) : o.roads.filter(r => !fastNames.has(r.n)).sort((a, b) => b.km - a.km).slice(0, 3);
+      const R = build(o.coords); o.classics = (typeof CLASSICAS !== 'undefined' ? CLASSICAS : []).filter(c => onRoute(R, c)).map(c => c.id);
+    });
+    return out;
+  }
+  function classicsNear(coords, exclude = [], max = 6) {
+    if (typeof CLASSICAS === 'undefined' || !coords || coords.length < 2) return [];
+    const R = build(coords), lim = Math.max(25, Math.min(90, R.total * 0.18));
+    return CLASSICAS.filter(c => !exclude.includes(c.id)).map(c => {
+      const pa = project(R, c.a[0], c.a[1]), pb = project(R, c.b[0], c.b[1]);
+      return { c, off: Math.min(pa.off, pb.off), ka: pa.km, kb: pb.km };
+    }).filter(x => x.off <= lim).sort((x, y) => x.off - y.off).slice(0, max);
+  }
+  return { hav, build, project, pointAt, route, search, reverse, near, postosAlongRoute, rainAlong, routeOptions, curviness, elevation, dirtKm, classicsNear, thin };
 })();
 
 /* combustível: consumo efetivo e plano de paradas sobre os postos reais da rota */
