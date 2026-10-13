@@ -104,9 +104,18 @@ const GEO = (() => {
     comida: ['["amenity"~"^(restaurant|cafe|fast_food)$"]'],
     turismo: ['["tourism"~"^(viewpoint|attraction|museum)$"]', '["natural"="waterfall"]', '["natural"="peak"]["name"]'],
     trilha: ['["highway"~"^(track|path)$"]["name"]', '["route"~"^(hiking|mtb)$"]'],
-    apoio: ['["shop"~"^(motorcycle|motorcycle_repair|tyres|car_repair)$"]', '["craft"="mechanic"]']
+    apoio: ['["shop"~"^(motorcycle|motorcycle_repair|tyres|car_repair)$"]', '["craft"="mechanic"]'],
+    restaurante: ['["amenity"="restaurant"]'],
+    lanchonete: ['["amenity"~"^(fast_food|cafe)$"]'],
+    pousada: ['["tourism"~"^(guest_house|hostel|chalet)$"]'],
+    hotel: ['["tourism"~"^(hotel|motel)$"]'],
+    oficina: ['["shop"~"^(motorcycle|motorcycle_repair|tyres|car_repair)$"]', '["craft"="mechanic"]'],
+    servicos: ['["amenity"~"^(pharmacy|bank|hospital|clinic)$"]'],
+    loja: ['["shop"~"^(clothes|hardware|electronics|shoes|sports)$"]'],
+    shopping: ['["shop"="mall"]'],
+    comercio: ['["shop"~"^(supermarket|convenience|bakery|general)$"]']
   };
-  const TYPE_PT = { hotel: 'Hotel', guest_house: 'Pousada', hostel: 'Hostel', motel: 'Motel', camp_site: 'Camping', chalet: 'Chalé', apartment: 'Apartamento', restaurant: 'Restaurante', cafe: 'Café', fast_food: 'Lanchonete', viewpoint: 'Mirante', attraction: 'Atração', museum: 'Museu', waterfall: 'Cachoeira', peak: 'Pico', motorcycle: 'Loja/oficina de moto', motorcycle_repair: 'Oficina de moto', tyres: 'Borracharia', car_repair: 'Oficina', mechanic: 'Mecânico', fuel: 'Posto' };
+  const TYPE_PT = { hotel: 'Hotel', guest_house: 'Pousada', hostel: 'Hostel', motel: 'Motel', camp_site: 'Camping', chalet: 'Chalé', apartment: 'Apartamento', restaurant: 'Restaurante', cafe: 'Café', fast_food: 'Lanchonete', viewpoint: 'Mirante', attraction: 'Atração', museum: 'Museu', waterfall: 'Cachoeira', peak: 'Pico', motorcycle: 'Loja/oficina de moto', motorcycle_repair: 'Oficina de moto', tyres: 'Borracharia', car_repair: 'Oficina', mechanic: 'Mecânico', fuel: 'Posto', pharmacy: 'Farmácia', bank: 'Banco', hospital: 'Hospital', clinic: 'Clínica', clothes: 'Loja de roupas', hardware: 'Ferragens', electronics: 'Eletrônicos', shoes: 'Calçados', sports: 'Esportes', mall: 'Shopping', supermarket: 'Supermercado', convenience: 'Conveniência', bakery: 'Padaria', general: 'Comércio' };
   function describe(cat, t) {
     const kind = TYPE_PT[t.tourism] || TYPE_PT[t.amenity] || TYPE_PT[t.natural] || TYPE_PT[t.shop] || TYPE_PT[t.craft] || '';
     let sub = '';

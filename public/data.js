@@ -136,8 +136,18 @@ const CAT={
  hosp:{n:'Hospedagem',icon:'bed',color:'#7C3AED'},
  comida:{n:'Comida',icon:'food',color:'#C2410C'},
  trilha:{n:'Trilhas',icon:'trail',color:'#15803D'},
- apoio:{n:'Apoio mecânico',short:'Apoio',icon:'wrench',color:'#475569'}
+ apoio:{n:'Apoio mecânico',short:'Apoio',icon:'wrench',color:'#475569'},
+ restaurante:{n:'Restaurante',icon:'food',color:'#C2410C'},
+ lanchonete:{n:'Lanchonete',icon:'food',color:'#EA580C'},
+ pousada:{n:'Pousada',icon:'bed',color:'#7C3AED'},
+ hotel:{n:'Hotel',icon:'bed',color:'#6D28D9'},
+ oficina:{n:'Oficina',icon:'wrench',color:'#475569'},
+ servicos:{n:'Serviços',icon:'plus',color:'#0369A1'},
+ loja:{n:'Lojas',icon:'pin',color:'#BE185D'},
+ shopping:{n:'Shopping',icon:'pin',color:'#9D174D'},
+ comercio:{n:'Comércio local',icon:'pin',color:'#A16207'}
 };
+const ARR_CATS=['restaurante','lanchonete','pousada','hotel','turismo','posto','oficina','servicos','loja','shopping','comercio'];
 const STOPTYPES={saida:{n:'Saída',icon:'flag',min:0},parada:{n:'Parada',icon:'star',min:20},abastecer:{n:'Abastecer',icon:'fuel',min:15},almoco:{n:'Almoço',icon:'food',min:60},foto:{n:'Foto / mirante',icon:'camera',min:20},pernoite:{n:'Pernoite / destino',icon:'bed',min:0}};
 const SOSTYPES={pane:{n:'Pane mecânica',icon:'tool'},pneu:{n:'Pneu furado',icon:'tire'},seca:{n:'Pane seca',icon:'fuel'},acidente:{n:'Acidente',icon:'heart'}};
 const COLORS=['#1F7A4D','#2F6FD6','#C2410C','#7C3AED','#A16207','#0891B2','#DB2777','#4D7C0F','#B91C1C','#0F766E','#9333EA','#EA580C'];
