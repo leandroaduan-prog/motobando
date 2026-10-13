@@ -66,8 +66,18 @@ const NEAR_TAGS = {
   comida: ['amenity=restaurant', 'amenity=cafe', 'amenity=fast_food'],
   turismo: ['tourism=viewpoint', 'tourism=attraction', 'natural=waterfall'],
   apoio: ['shop=motorcycle', 'shop=tyres', 'shop=car_repair'],
+  // categorias do "Ao redor da parada"
+  restaurante: ['amenity=restaurant'],
+  lanchonete: ['amenity=fast_food', 'amenity=cafe'],
+  pousada: ['tourism=guest_house', 'tourism=hostel', 'tourism=chalet'],
+  hotel: ['tourism=hotel', 'tourism=motel'],
+  oficina: ['shop=motorcycle', 'shop=tyres', 'shop=car_repair'],
+  servicos: ['amenity=pharmacy', 'amenity=bank', 'amenity=hospital'],
+  loja: ['shop=clothes', 'shop=hardware', 'shop=electronics'],
+  shopping: ['shop=mall'],
+  comercio: ['shop=supermarket', 'shop=convenience', 'shop=bakery'],
 };
-const KIND_PT = { fuel: 'Posto', hotel: 'Hotel', guest_house: 'Pousada', motel: 'Motel', hostel: 'Hostel', restaurant: 'Restaurante', cafe: 'Café', fast_food: 'Lanchonete', viewpoint: 'Mirante', attraction: 'Atração', waterfall: 'Cachoeira', motorcycle: 'Loja/oficina de moto', tyres: 'Borracharia', car_repair: 'Oficina' };
+const KIND_PT = { fuel: 'Posto', hotel: 'Hotel', guest_house: 'Pousada', motel: 'Motel', hostel: 'Hostel', restaurant: 'Restaurante', cafe: 'Café', fast_food: 'Lanchonete', viewpoint: 'Mirante', attraction: 'Atração', waterfall: 'Cachoeira', motorcycle: 'Loja/oficina de moto', tyres: 'Borracharia', car_repair: 'Oficina', chalet: 'Chalé', pharmacy: 'Farmácia', bank: 'Banco', hospital: 'Hospital', clothes: 'Loja de roupas', hardware: 'Ferragens', electronics: 'Eletrônicos', mall: 'Shopping', supermarket: 'Supermercado', convenience: 'Conveniência', bakery: 'Padaria' };
 const nearCache = new Map();
 let nomChain = Promise.resolve();
 function nominatim(url) {
@@ -215,6 +225,10 @@ function cleanMember(m, old = {}) {
     lastSeen: old.lastSeen || Date.now(),
   };
 }
+function cleanPlaces(a) {
+  if (!Array.isArray(a) || !a.length) return undefined;
+  return a.slice(0, 12).map(x => ({ id: clip(x.id, 24) || uid(), cat: clip(x.cat, 14), name: clip(x.name, 70), lat: num(x.lat), lng: num(x.lng), kind: clip(x.kind, 40), rating: x.rating ? num(x.rating) : undefined, reviews: x.reviews ? num(x.reviews) : undefined, phone: clip(x.phone, 30) || undefined, maps: clip(x.maps, 200) || undefined, extra: clip(x.extra, 80) || undefined })).filter(x => x.name && x.lat && x.lng);
+}
 function cleanTrip(p, old) {
   const t = { ...old };
   if ('name' in p) t.name = clip(p.name, 60) || 'Minha viagem';
@@ -223,7 +237,7 @@ function cleanTrip(p, old) {
   if ('mode' in p) t.mode = p.mode === 'solo' ? 'solo' : 'grupo';
   if ('gap' in p) t.gap = Math.max(1, Math.min(50, num(p.gap, 5)));
   if ('status' in p) { t.status = ['planejada', 'andamento', 'encerrada'].includes(p.status) ? p.status : 'planejada'; if (t.status === 'andamento' && !t.startedAt) t.startedAt = Date.now(); if (t.status === 'encerrada') t.endedAt = Date.now(); }
-  if (Array.isArray(p.stops)) t.stops = p.stops.slice(0, 100).map(s => ({ id: clip(s.id, 20) || uid(), name: clip(s.name, 70), lat: num(s.lat), lng: num(s.lng), type: clip(s.type, 12) || 'parada', note: clip(s.note, 120) }));
+  if (Array.isArray(p.stops)) t.stops = p.stops.slice(0, 100).map(s => ({ id: clip(s.id, 20) || uid(), name: clip(s.name, 70), lat: num(s.lat), lng: num(s.lng), type: clip(s.type, 12) || 'parada', note: clip(s.note, 120), rating: s.rating ? num(s.rating) : undefined, maps: clip(s.maps, 200) || undefined, places: cleanPlaces(s.places) }));
   if (Array.isArray(p.checklist)) t.checklist = p.checklist.slice(0, 40).map(c => ({ id: clip(c.id, 20) || uid(), t: clip(c.t, 70) }));
   if ('route' in p) t.route = p.route && Array.isArray(p.route.coords) ? { coords: p.route.coords.slice(0, 6000).map(c => [Math.round(num(c[0]) * 1e5) / 1e5, Math.round(num(c[1]) * 1e5) / 1e5]), dist_km: num(p.route.dist_km), dur_min: num(p.route.dur_min), label: clip(p.route.label, 30), via: clip(p.route.via, 160) } : null;
   if (Array.isArray(p.postos)) t.postos = p.postos.slice(0, 400).map(x => ({ lat: num(x.lat), lng: num(x.lng), name: clip(x.name, 60), km: num(x.km) }));
