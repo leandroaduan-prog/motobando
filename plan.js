@@ -37,7 +37,9 @@ module.exports = function setupPlanner(app, { nominatim, nearOSM, overpassQuery,
   }
 
   /* ---------- lugares: Google (com notas) ou OpenStreetMap ---------- */
-  const GTYPES = { hosp: ['lodging'], comida: ['restaurant'], posto: ['gas_station'], turismo: ['tourist_attraction'], apoio: ['car_repair'], descanso: ['cafe', 'restaurant', 'gas_station'], camping: ['campground'] };
+  const GTYPES = { hosp: ['lodging'], comida: ['restaurant'], posto: ['gas_station'], turismo: ['tourist_attraction'], apoio: ['car_repair'], descanso: ['cafe', 'restaurant', 'gas_station'], camping: ['campground'],
+    restaurante: ['restaurant'], lanchonete: ['cafe', 'fast_food_restaurant', 'bakery'], pousada: ['guest_house', 'bed_and_breakfast', 'hostel'], hotel: ['hotel', 'resort_hotel', 'motel'],
+    oficina: ['car_repair'], servicos: ['pharmacy', 'bank', 'hospital'], loja: ['clothing_store', 'hardware_store', 'electronics_store'], shopping: ['shopping_mall'], comercio: ['supermarket', 'convenience_store', 'grocery_store'] };
   const PRICE = { PRICE_LEVEL_FREE: 0, PRICE_LEVEL_INEXPENSIVE: 1, PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4 };
   const FIELDS = 'places.id,places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.location,places.formattedAddress,places.googleMapsUri,places.primaryTypeDisplayName,places.nationalPhoneNumber,places.websiteUri';
   const gNorm = (cat, x) => ({ cat, id: x.id, name: (x.displayName || {}).text || 'Sem nome', lat: x.location.latitude, lng: x.location.longitude, kind: (x.primaryTypeDisplayName || {}).text || '', rating: x.rating || null, reviews: x.userRatingCount || 0, price: x.priceLevel in PRICE ? PRICE[x.priceLevel] : null, extra: (x.formattedAddress || '').split(',').slice(0, 2).join(','), phone: x.nationalPhoneNumber || '', web: x.websiteUri || '', maps: x.googleMapsUri || '', named: true, src: 'google' });
